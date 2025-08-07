@@ -9,7 +9,10 @@ def request_llm(prompt: str, mode: str = None) -> str:
     # mode: 'openai' or 'lmstudio' (기본: 환경변수 LLM_MODE, 없으면 openai)
     mode = mode or os.getenv("LLM_MODE", "openai").lower()
     if mode == "lmstudio":
-        url = "http://localhost:1234/v1/chat"
+        url = "http://localhost:1234/v1/chat/completions"
+        # 프롬프트 길이 제한 (예: 2000자)
+        if len(prompt) > 2000:
+            return "[ERROR] 프롬프트가 너무 깁니다. 2000자 이하로 줄여주세요."
         payload = {
             "messages": [
                 {"role": "user", "content": prompt}
@@ -18,12 +21,17 @@ def request_llm(prompt: str, mode: str = None) -> str:
             "temperature": 0.2
         }
         try:
-            response = requests.post(url, json=payload, timeout=60)
+            response = requests.post(url, json=payload, timeout=120)
             response.raise_for_status()
             data = response.json()
-            return data['choices'][0]['message']['content'].strip()
+            if 'choices' in data and data['choices']:
+                return data['choices'][0]['message']['content'].strip()
+            else:
+                return f"[ERROR] LLM 응답 포맷 오류: {data}"
+        except requests.exceptions.Timeout:
+            return "[ERROR] LLM 요청 실패 (LM Studio): 응답이 120초 내에 오지 않았습니다.\n- LM Studio에 모델이 로드되어 있는지 확인하세요.\n- 너무 큰 모델/긴 프롬프트/PC 사양 문제일 수 있습니다.\n- LM Studio에서 직접 테스트해보세요."
         except Exception as e:
-            return f"[ERROR] LLM 요청 실패 (LM Studio): {e}"
+            return f"[ERROR] LLM 요청 실패 (LM Studio): {e}\n(응답 내용: {getattr(e, 'response', None)})"
     else:
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
