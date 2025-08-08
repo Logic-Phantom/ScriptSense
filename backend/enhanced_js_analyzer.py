@@ -650,31 +650,42 @@ class PerformanceOptimizedAnalyzer:
                 line_number=line_num
             ))
         
-        # 중복 변수 선언 검사
-        var_pattern = r'var\s+(\w+)'
-        declared_vars = {}
-        for match in re.finditer(var_pattern, code):
+        # 중복 변수 선언 검사 (함수 스코프 내에서만 검사)
+        function_iter = re.finditer(r'function\s+\w+\s*\([^)]*\)\s*\{([^}]*)\}', code, re.DOTALL)
+        for func_match in function_iter:
+            func_body = func_match.group(1)
+            func_body_start = func_match.start(1)
+            seen_in_function = {}
+            for var_match in re.finditer(r'\bvar\s+(\w+)\b', func_body):
+                var_name = var_match.group(1)
+                abs_pos = func_body_start + var_match.start()
+                line_num = code[:abs_pos].count('\n') + 1
+                if var_name in seen_in_function:
+                    issues.append(self.create_issue(
+                        category='variable_scope_issues',
+                        severity=IssueSeverity.MEDIUM,
+                        message=f"변수 '{var_name}'가 동일 함수 내에서 중복 선언되었습니다",
+                        line_number=line_num
+                    ))
+                else:
+                    seen_in_function[var_name] = line_num
+
+        # 미사용 변수 검사 (전체 코드 기준의 첫 선언만 대상으로 유지)
+        declared_vars: Dict[str, int] = {}
+        for match in re.finditer(r'\bvar\s+(\w+)\b', code):
             var_name = match.group(1)
-            line_num = code[:match.start()].count('\n') + 1
-            if var_name in declared_vars:
-                issues.append(self.create_issue(
-                    category='variable_scope_issues',
-                    severity=IssueSeverity.MEDIUM,
-                    message=f"변수 '{var_name}'가 중복 선언되었습니다",
-                    line_number=line_num
-                ))
-            else:
-                declared_vars[var_name] = line_num
-        
-        # 미사용 변수 검사
-        for var_name, line_num in declared_vars.items():
+            if var_name not in declared_vars:
+                declared_vars[var_name] = code[:match.start()].count('\n') + 1
+        for var_name, decl_line in declared_vars.items():
             usage_pattern = rf'\b{var_name}\b(?!\s*=)'
-            if not re.search(usage_pattern, code[code.find('\n', code.find(var_name)):]):
+            # 선언 이후 영역에서의 사용 여부만 간단히 확인
+            decl_index = 0 if decl_line <= 1 else [m.start() for m in re.finditer(r'^', code, re.MULTILINE)][decl_line - 1]
+            if not re.search(usage_pattern, code[decl_index:]):
                 issues.append(self.create_issue(
                     category='unnecessary_code',
                     severity=IssueSeverity.LOW,
                     message=f"선언된 변수 '{var_name}'가 사용되지 않습니다",
-                    line_number=line_num
+                    line_number=decl_line
                 ))
         
         return issues
@@ -813,10 +824,11 @@ class PerformanceOptimizedAnalyzer:
         if any(keyword in func_body for keyword in ['data', 'setData', 'getData']):
             detailed_operations.append("데이터 조회/설정 처리를 수행합니다")
         
+        header = f"{func_name} 함수: {purpose}"
         if detailed_operations:
-            return f"{func_name} 함수: {purpose} - {' → '.join(detailed_operations)}"
+            return header + "\n  - " + "\n  - ".join(detailed_operations)
         else:
-            return f"{func_name} 함수: {purpose} - 기본 작업을 수행합니다"
+            return header + "\n  - 기본 작업을 수행합니다"
     
     def _infer_control_type(self, control_id: str) -> str:
         """컨트롤 ID로부터 타입 추론"""
