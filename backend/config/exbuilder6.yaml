@@ -45,6 +45,9 @@ versions:
         - getColumnCount
         - getSelectedRows
         - setSelectedRows
+        - getSelectedRow
+        - getSelectedRowIndex
+        - setSelectedRowIndex
         - getCellValue
         - setCellValue
         - getCellText
@@ -79,6 +82,27 @@ versions:
         - setPageCount
         - getPageInfo
         - setPageInfo
+        - getCurrentRow
+        - setCurrentRow
+        - getCurrentRowIndex
+        - setCurrentRowIndex
+        - getRowByIndex
+        - getRowByData
+        - findRow
+        - findRows
+        - selectRow
+        - selectRows
+        - deselectRow
+        - deselectRows
+        - selectAll
+        - deselectAll
+        - isRowSelected
+        - isRowChecked
+        - isRowExpanded
+        - expandRow
+        - collapseRow
+        - expandAll
+        - collapseAll
       properties:
         - text
         - value

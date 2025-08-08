@@ -276,27 +276,7 @@ EXBUILDER6_CONTROL_APIS = {
     }
 }
 
-EXBUILDER6_COMMON_APIS = {
-    'methods': [
-        'setValue', 'getValue', 'setText', 'getText', 'enable', 'disable', 'show', 'hide', 'focus', 'blur',
-        'setVisible', 'getVisible', 'setEnabled', 'getEnabled', 'setReadOnly', 'getReadOnly',
-        'setWidth', 'getWidth', 'setHeight', 'getHeight', 'setStyle', 'getStyle', 'setData', 'getData',
-        'refresh', 'clear', 'reset', 'validate', 'isValid', 'getParent', 'getChild', 'getChildren',
-        'getSibling', 'getSiblings', 'getRoot', 'getAncestor', 'getDescendant', 'getFirstChild',
-        'getLastChild', 'getNextSibling', 'getPreviousSibling', 'addChild', 'removeChild', 'insertChild'
-    ],
-    'properties': [
-        'text', 'value', 'visible', 'enabled', 'readOnly', 'width', 'height', 'style', 'data',
-        'name', 'id', 'className', 'tagName', 'parentNode', 'childNodes', 'firstChild', 'lastChild',
-        'nextSibling', 'previousSibling', 'nodeType', 'nodeValue', 'nodeName', 'attributes'
-    ],
-    'events': [
-        'onLoad', 'onUnload', 'onClick', 'onDoubleClick', 'onRightClick', 'onMouseDown', 'onMouseUp',
-        'onMouseOver', 'onMouseOut', 'onMouseMove', 'onMouseEnter', 'onMouseLeave', 'onFocus', 'onBlur',
-        'onKeyDown', 'onKeyUp', 'onKeyPress', 'onChange', 'onSelect', 'onInput', 'onInvalid', 'onReset',
-        'onSubmit', 'onError', 'onAbort', 'onLoad', 'onUnload', 'onResize', 'onScroll', 'onContextMenu'
-    ]
-}
+
 
 # ============================================================================
 # 설정 관리 클래스
@@ -317,17 +297,17 @@ class ConfigManager:
                 # 기본 설정 반환
                 return {
                     'versions': {
-                        '6.0': EXBUILDER6_CONTROL_APIS
+                        '6.0': {}
                     },
-                    'current_apis': EXBUILDER6_CONTROL_APIS
+                    'current_apis': {}
                 }
         except Exception as e:
             logger.warning(f"설정 파일 로드 실패: {e}, 기본 설정 사용")
             return {
                 'versions': {
-                    '6.0': EXBUILDER6_CONTROL_APIS
+                    '6.0': {}
                 },
-                'current_apis': EXBUILDER6_CONTROL_APIS
+                'current_apis': {}
             }
     
     def get_api_info(self, version: str = "6.0") -> Dict:
@@ -431,7 +411,20 @@ class EXBuilder6APIValidator:
                 else:
                     return pattern_name
         
-        # 2. 동적 컨트롤 검사
+        # 2. 패턴 기반 추론 (예: "sampleGrd"에서 "grd" 추출)
+        control_patterns = {
+            'grd': r'grd',  # 그리드 패턴
+            'btn': r'btn',  # 버튼 패턴
+            'cmb': r'cmb',  # 콤보박스 패턴
+            'cbx': r'cbx',  # 체크박스 패턴
+            'ipb': r'ipb',  # 입력박스 패턴
+        }
+        
+        for control_type, pattern in control_patterns.items():
+            if re.search(pattern, control_id, re.IGNORECASE):
+                return control_type
+        
+        # 3. 동적 컨트롤 검사
         return self._check_dynamic_control(control_id)
     
     def _check_dynamic_control(self, control_id: str) -> str:
@@ -458,20 +451,56 @@ class EXBuilder6APIValidator:
         
         if control_type in self.control_patterns:
             apis = self.control_patterns[control_type]
+            available_methods = apis.get('methods', [])
             
             # 메서드 검증
-            if method_name not in apis.get('methods', []):
+            if method_name not in available_methods:
                 # 공통 API 확인
-                if method_name not in EXBUILDER6_COMMON_APIS['methods']:
-                    issues.append(AnalysisIssue(
-                        category='api',
-                        severity=IssueSeverity.HIGH,
-                        message=f"{control_type} 컨트롤에 '{method_name}' 메서드가 없습니다. "
-                                f"사용 가능한 메서드: {', '.join(apis.get('methods', [])[:5])}...",
-                        suggestion=f"올바른 메서드를 사용하거나 공통 API를 확인하세요."
-                    ))
+                common_apis = self.config_manager.get_api_info().get('common_apis', {}).get('methods', [])
+                if method_name not in common_apis:
+                    # 오타 가능성이 있는 API 이름 찾기
+                    similar_apis = self._find_similar_api(method_name, available_methods)
+                    
+                    if similar_apis:
+                        issues.append(AnalysisIssue(
+                            category='api',
+                            severity=IssueSeverity.HIGH,
+                            message=f"{control_type} 컨트롤에 '{method_name}' 메서드가 없습니다. "
+                                    f"유사한 API: {', '.join(similar_apis[:3])}",
+                            suggestion=f"올바른 API 이름을 확인하세요. 제안: {similar_apis[0] if similar_apis else 'API 문서 확인'}"
+                        ))
+                    else:
+                        issues.append(AnalysisIssue(
+                            category='api',
+                            severity=IssueSeverity.HIGH,
+                            message=f"{control_type} 컨트롤에 '{method_name}' 메서드가 존재하지 않습니다. "
+                                    f"사용 가능한 메서드: {', '.join(available_methods[:10])}...",
+                            suggestion=f"올바른 메서드를 사용하거나 공통 API를 확인하세요."
+                        ))
         
         return issues
+    
+    def _find_similar_api(self, method_name: str, api_list: List[str]) -> List[str]:
+        """유사한 API 이름 찾기 (오타 감지용)"""
+        similar_apis = []
+        
+        for api in api_list:
+            # 정확한 매칭
+            if api == method_name:
+                return []
+            
+            # 유사도 계산 (간단한 방법)
+            if len(api) >= len(method_name) - 2 and len(api) <= len(method_name) + 2:
+                # 공통 문자 수 계산
+                common_chars = sum(1 for c in method_name if c in api)
+                similarity = common_chars / max(len(method_name), len(api))
+                
+                if similarity >= 0.7:  # 70% 이상 유사
+                    similar_apis.append(api)
+        
+        # 유사도 순으로 정렬
+        similar_apis.sort(key=lambda x: sum(1 for c in method_name if c in x), reverse=True)
+        return similar_apis
 
 # ============================================================================
 # 성능 최적화된 분석기 클래스
@@ -685,10 +714,10 @@ class PerformanceOptimizedAnalyzer:
             else:
                 # app.lookup으로 찾지 못한 변수에 대한 메서드 호출도 검사
                 # 일반적인 eXBuilder6 API 패턴과 비교
-                common_apis = EXBUILDER6_COMMON_APIS['methods']
+                common_apis = self.config_manager.get_api_info().get('common_apis', {}).get('methods', [])
                 if method_name not in common_apis:
                     # 오타 가능성이 있는 API 이름 찾기
-                    similar_apis = self._find_similar_api(method_name, common_apis)
+                    similar_apis = self.api_validator._find_similar_api(method_name, common_apis)
                     if similar_apis:
                         issues.append(self.create_issue(
                             category='api',
@@ -699,28 +728,6 @@ class PerformanceOptimizedAnalyzer:
                         ))
         
         return issues
-    
-    def _find_similar_api(self, method_name: str, api_list: List[str]) -> List[str]:
-        """유사한 API 이름 찾기 (오타 감지용)"""
-        similar_apis = []
-        
-        for api in api_list:
-            # 정확한 매칭
-            if api == method_name:
-                return []
-            
-            # 유사도 계산 (간단한 방법)
-            if len(api) >= len(method_name) - 2 and len(api) <= len(method_name) + 2:
-                # 공통 문자 수 계산
-                common_chars = sum(1 for c in method_name if c in api)
-                similarity = common_chars / max(len(method_name), len(api))
-                
-                if similarity >= 0.7:  # 70% 이상 유사
-                    similar_apis.append(api)
-        
-        # 유사도 순으로 정렬
-        similar_apis.sort(key=lambda x: sum(1 for c in method_name if c in x), reverse=True)
-        return similar_apis
     
     async def analyze_async(self, code: str) -> Dict:
         """비동기 분석"""
@@ -772,24 +779,195 @@ class PerformanceOptimizedAnalyzer:
     def _analyze_function_process(self, func_name: str, func_body: str) -> str:
         """함수의 프로세스를 분석하여 설명 생성"""
         purpose = self._analyze_function_purpose(func_name)
-        operations = []
+        detailed_operations = []
         
-        # 주요 작업 분석
-        if 'app.lookup' in func_body:
-            operations.append("컨트롤 객체를 찾습니다")
-        if any(keyword in func_body for keyword in ['file', 'files', 'addFileParameter']):
-            operations.append("파일 처리를 수행합니다")
-        if any(keyword in func_body for keyword in ['data', 'setData', 'getData']):
-            operations.append("데이터를 처리합니다")
+        # app.lookup 분석
+        lookup_matches = re.findall(r'app\.lookup\(["\']([^"\']+)["\']\)', func_body)
+        if lookup_matches:
+            for control_id in lookup_matches:
+                control_type = self._infer_control_type(control_id)
+                detailed_operations.append(f"app.lookup('{control_id}')로 {control_type} 컨트롤 객체를 찾습니다")
+        
+        # eXBuilder6 API 메소드 분석
+        api_operations = self._analyze_exbuilder6_apis(func_body)
+        detailed_operations.extend(api_operations)
+        
+        # 조건문 분석
         if 'if' in func_body:
-            operations.append("조건에 따라 분기합니다")
-        if any(keyword in func_body for keyword in ['for', 'while', 'do']):
-            operations.append("반복 작업을 수행합니다")
+            conditions = self._analyze_conditions(func_body)
+            if conditions:
+                detailed_operations.append(f"조건 검사: {conditions}")
+            else:
+                detailed_operations.append("조건에 따라 분기합니다")
         
-        if operations:
-            return f"{func_name} 함수: {purpose} - {', '.join(operations)}"
+        # 반복문 분석
+        if any(keyword in func_body for keyword in ['for', 'while', 'do']):
+            loop_info = self._analyze_loops(func_body)
+            detailed_operations.append(loop_info)
+        
+        # 파일 처리 분석
+        if any(keyword in func_body for keyword in ['file', 'files', 'addFileParameter']):
+            detailed_operations.append("파일 업로드/다운로드 처리를 수행합니다")
+        
+        # 데이터 처리 분석
+        if any(keyword in func_body for keyword in ['data', 'setData', 'getData']):
+            detailed_operations.append("데이터 조회/설정 처리를 수행합니다")
+        
+        if detailed_operations:
+            return f"{func_name} 함수: {purpose} - {' → '.join(detailed_operations)}"
         else:
             return f"{func_name} 함수: {purpose} - 기본 작업을 수행합니다"
+    
+    def _infer_control_type(self, control_id: str) -> str:
+        """컨트롤 ID로부터 타입 추론"""
+        control_id_lower = control_id.lower()
+        
+        if 'grd' in control_id_lower:
+            return "그리드(Grid)"
+        elif 'btn' in control_id_lower:
+            return "버튼(Button)"
+        elif 'cmb' in control_id_lower:
+            return "콤보박스(ComboBox)"
+        elif 'cbx' in control_id_lower:
+            return "체크박스(CheckBox)"
+        elif 'ipb' in control_id_lower:
+            return "입력박스(InputBox)"
+        elif 'lbl' in control_id_lower:
+            return "라벨(Label)"
+        elif 'txt' in control_id_lower:
+            return "텍스트박스(TextBox)"
+        else:
+            return "컨트롤"
+    
+    def _analyze_exbuilder6_apis(self, func_body: str) -> List[str]:
+        """eXBuilder6 API 사용 분석"""
+        operations = []
+        
+        # 그리드 관련 API 분석
+        grid_apis = {
+            'getSelectedRowIndex': '선택된 행의 인덱스를 반환합니다 (반환값: 선택된 행 인덱스, -1이면 선택된 행 없음)',
+            'getSelectedRow': '선택된 행 객체를 반환합니다 (반환값: Row 객체 또는 null)',
+            'getRowData': '행의 데이터를 반환합니다 (반환값: 행 데이터 객체)',
+            'getRowCount': '전체 행 수를 반환합니다 (반환값: 행 수)',
+            'getColumnCount': '전체 컬럼 수를 반환합니다 (반환값: 컬럼 수)',
+            'addRow': '새 행을 추가합니다 (파라미터: 행 데이터)',
+            'deleteRow': '행을 삭제합니다 (파라미터: 행 인덱스)',
+            'updateRow': '행을 업데이트합니다 (파라미터: 행 인덱스, 새 데이터)',
+            'setData': '그리드 데이터를 설정합니다 (파라미터: 데이터 배열)',
+            'getData': '그리드 데이터를 반환합니다 (반환값: 데이터 배열)',
+            'clear': '그리드 데이터를 모두 삭제합니다',
+            'refresh': '그리드를 새로고침합니다',
+            'enable': '그리드를 활성화합니다',
+            'disable': '그리드를 비활성화합니다',
+            'show': '그리드를 표시합니다',
+            'hide': '그리드를 숨깁니다',
+            'focus': '그리드에 포커스를 설정합니다',
+            'blur': '그리드에서 포커스를 제거합니다'
+        }
+        
+        # 버튼 관련 API 분석
+        button_apis = {
+            'setText': '버튼 텍스트를 설정합니다 (파라미터: 텍스트)',
+            'getText': '버튼 텍스트를 반환합니다 (반환값: 텍스트)',
+            'click': '버튼 클릭 이벤트를 발생시킵니다',
+            'enable': '버튼을 활성화합니다',
+            'disable': '버튼을 비활성화합니다',
+            'show': '버튼을 표시합니다',
+            'hide': '버튼을 숨깁니다',
+            'focus': '버튼에 포커스를 설정합니다',
+            'blur': '버튼에서 포커스를 제거합니다'
+        }
+        
+        # 콤보박스 관련 API 분석
+        combo_apis = {
+            'getSelectedIndex': '선택된 항목의 인덱스를 반환합니다 (반환값: 인덱스)',
+            'setSelectedIndex': '선택된 항목을 설정합니다 (파라미터: 인덱스)',
+            'getSelectedValue': '선택된 항목의 값을 반환합니다 (반환값: 값)',
+            'setSelectedValue': '선택된 항목을 값으로 설정합니다 (파라미터: 값)',
+            'getSelectedText': '선택된 항목의 텍스트를 반환합니다 (반환값: 텍스트)',
+            'setSelectedText': '선택된 항목을 텍스트로 설정합니다 (파라미터: 텍스트)',
+            'addItem': '항목을 추가합니다 (파라미터: 텍스트, 값)',
+            'deleteItem': '항목을 삭제합니다 (파라미터: 인덱스)',
+            'clear': '모든 항목을 삭제합니다',
+            'getItemCount': '항목 수를 반환합니다 (반환값: 항목 수)'
+        }
+        
+        # 공통 API 분석
+        common_apis = {
+            'setValue': '컨트롤 값을 설정합니다 (파라미터: 값)',
+            'getValue': '컨트롤 값을 반환합니다 (반환값: 값)',
+            'setText': '컨트롤 텍스트를 설정합니다 (파라미터: 텍스트)',
+            'getText': '컨트롤 텍스트를 반환합니다 (반환값: 텍스트)',
+            'setVisible': '컨트롤 표시 여부를 설정합니다 (파라미터: true/false)',
+            'getVisible': '컨트롤 표시 여부를 반환합니다 (반환값: true/false)',
+            'setEnabled': '컨트롤 활성화 여부를 설정합니다 (파라미터: true/false)',
+            'getEnabled': '컨트롤 활성화 여부를 반환합니다 (반환값: true/false)',
+            'setReadOnly': '컨트롤 읽기 전용 여부를 설정합니다 (파라미터: true/false)',
+            'getReadOnly': '컨트롤 읽기 전용 여부를 반환합니다 (반환값: true/false)',
+            'focus': '컨트롤에 포커스를 설정합니다',
+            'blur': '컨트롤에서 포커스를 제거합니다',
+            'show': '컨트롤을 표시합니다',
+            'hide': '컨트롤을 숨깁니다',
+            'enable': '컨트롤을 활성화합니다',
+            'disable': '컨트롤을 비활성화합니다'
+        }
+        
+        # 메소드 호출 패턴 찾기
+        method_pattern = r'(\w+)\.(\w+)\s*\([^)]*\)'
+        method_matches = re.findall(method_pattern, func_body)
+        
+        for var_name, method_name in method_matches:
+            # 그리드 API 확인
+            if method_name in grid_apis:
+                operations.append(f"{var_name}.{method_name}(): {grid_apis[method_name]}")
+            # 버튼 API 확인
+            elif method_name in button_apis:
+                operations.append(f"{var_name}.{method_name}(): {button_apis[method_name]}")
+            # 콤보박스 API 확인
+            elif method_name in combo_apis:
+                operations.append(f"{var_name}.{method_name}(): {combo_apis[method_name]}")
+            # 공통 API 확인
+            elif method_name in common_apis:
+                operations.append(f"{var_name}.{method_name}(): {common_apis[method_name]}")
+        
+        return operations
+    
+    def _analyze_conditions(self, func_body: str) -> str:
+        """조건문 분석"""
+        conditions = []
+        
+        # if 문 분석
+        if_matches = re.findall(r'if\s*\(([^)]+)\)', func_body)
+        for condition in if_matches:
+            # 간단한 조건 설명 생성
+            if '==' in condition:
+                conditions.append("값 비교 검사")
+            elif '!=' in condition:
+                conditions.append("값 불일치 검사")
+            elif '>' in condition or '<' in condition:
+                conditions.append("크기 비교 검사")
+            elif 'getSelectedRowIndex' in condition:
+                conditions.append("선택된 행 존재 여부 검사")
+            elif 'getSelectedIndex' in condition:
+                conditions.append("선택된 항목 존재 여부 검사")
+            else:
+                conditions.append("조건 검사")
+        
+        return ', '.join(conditions) if conditions else ""
+    
+    def _analyze_loops(self, func_body: str) -> str:
+        """반복문 분석"""
+        if 'for' in func_body:
+            if 'getRowCount' in func_body:
+                return "그리드 행을 순회하며 데이터를 처리합니다"
+            elif 'getItemCount' in func_body:
+                return "콤보박스 항목을 순회하며 데이터를 처리합니다"
+            else:
+                return "배열이나 객체를 순회하며 데이터를 처리합니다"
+        elif 'while' in func_body:
+            return "조건이 만족될 때까지 반복 작업을 수행합니다"
+        else:
+            return "반복 작업을 수행합니다"
     
     def _analyze_function_purpose(self, func_name: str) -> str:
         """함수명을 분석하여 목적 추정"""
