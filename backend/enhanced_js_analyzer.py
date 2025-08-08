@@ -54,43 +54,103 @@ class EnhancedJavaScriptAnalysisResponse(BaseModel):
 # ============================================================================
 
 ERROR_PATTERNS = {
+    'syntax_errors': [
+        (r'\bar\s+\w+', '변수 선언 오류: "ar" → "var"로 수정하세요', IssueSeverity.HIGH),
+        (r'\blet\s+\w+', '변수 선언 확인: "let" 사용을 권장합니다', IssueSeverity.LOW),
+        (r'\bconst\s+\w+', '상수 선언 확인: "const" 사용을 권장합니다', IssueSeverity.LOW),
+        (r'function\s+(\w+)\s*\([^)]*\)\s*\{[^}]*\1\s*\(', '재귀 함수 호출이 무한 루프를 일으킬 수 있습니다', IssueSeverity.HIGH),
+        (r'var\s+(\w+)\s*=\s*\1', '변수가 자기 자신을 참조하고 있습니다', IssueSeverity.HIGH),
+        (r'(\w+)\s*=\s*\1\s*[+\-*/]', '변수가 자기 자신과 연산하고 있습니다', IssueSeverity.MEDIUM),
+    ],
+    'variable_scope_issues': [
+        (r'var\s+\w+\s*=\s*function\s*\([^)]*\)\s*\{[^}]*var\s+\w+', '함수 내부에서 var 재선언은 호이스팅 문제를 일으킬 수 있습니다', IssueSeverity.MEDIUM),
+        (r'for\s*\(\s*var\s+\w+\s+in\s+', 'for...in 루프에서 var 사용시 스코프 문제가 발생할 수 있습니다', IssueSeverity.MEDIUM),
+        (r'var\s+\w+\s*=\s*[^;]*\|\|[^;]*;', '논리 OR 연산자로 기본값 설정시 falsy 값 처리를 확인하세요', IssueSeverity.LOW),
+    ],
     'null_reference': [
         (r'\.getElementById\([^)]*\)\.', 'getElementById 결과가 null일 수 있습니다', IssueSeverity.HIGH),
         (r'\.querySelector\([^)]*\)\.', 'querySelector 결과가 null일 수 있습니다', IssueSeverity.HIGH),
         (r'\.length\s*[<>=]', 'length 속성 접근시 null/undefined 오류 가능성', IssueSeverity.MEDIUM),
+        (r'\.\w+\([^)]*\)\.', '메서드 체이닝시 중간 결과가 null일 수 있습니다', IssueSeverity.HIGH),
+        (r'\[\d+\]\.', '배열 인덱스 접근시 해당 인덱스가 존재하지 않을 수 있습니다', IssueSeverity.MEDIUM),
     ],
     'xss_security': [
         (r'\.innerHTML\s*=', 'innerHTML 사용시 XSS 위험이 있습니다', IssueSeverity.CRITICAL),
         (r'eval\(', 'eval() 사용은 보안상 위험합니다', IssueSeverity.CRITICAL),
+        (r'Function\s*\(', 'Function 생성자 사용은 보안상 위험합니다', IssueSeverity.CRITICAL),
+        (r'\.outerHTML\s*=', 'outerHTML 사용시 XSS 위험이 있습니다', IssueSeverity.CRITICAL),
+        (r'document\.write\s*\(', 'document.write 사용은 보안상 위험합니다', IssueSeverity.CRITICAL),
     ],
     'json_parsing': [
         (r'JSON\.parse\([^)]*\)', 'JSON.parse는 try-catch로 감싸야 합니다', IssueSeverity.HIGH),
         (r'\.parseInt\([^)]*\)', 'parseInt 호출시 잘못된 문자열일 수 있습니다', IssueSeverity.MEDIUM),
         (r'\.parseFloat\([^)]*\)', 'parseFloat 호출시 잘못된 문자열일 수 있습니다', IssueSeverity.MEDIUM),
+        (r'Number\s*\([^)]*\)', 'Number() 변환시 NaN이 반환될 수 있습니다', IssueSeverity.MEDIUM),
     ],
     'array_operations': [
         (r'\.split\([^)]*\)\[', 'split 결과가 빈 배열일 수 있습니다', IssueSeverity.MEDIUM),
         (r'\.push\([^)]*\)', 'push 메서드 호출시 배열이 null일 수 있습니다', IssueSeverity.MEDIUM),
         (r'\.pop\(\)', 'pop 메서드 호출시 빈 배열일 수 있습니다', IssueSeverity.MEDIUM),
         (r'\.shift\(\)', 'shift 메서드 호출시 빈 배열일 수 있습니다', IssueSeverity.MEDIUM),
+        (r'\.splice\([^)]*\)', 'splice 메서드 호출시 배열 범위를 벗어날 수 있습니다', IssueSeverity.MEDIUM),
+        (r'\.slice\([^)]*\)', 'slice 메서드 호출시 잘못된 인덱스일 수 있습니다', IssueSeverity.LOW),
+        (r'\.indexOf\([^)]*\)\s*[<>=]', 'indexOf 결과가 -1일 수 있습니다', IssueSeverity.MEDIUM),
     ],
     'string_operations': [
         (r'\.charAt\([^)]*\)', 'charAt 인덱스가 문자열 길이를 초과할 수 있습니다', IssueSeverity.MEDIUM),
         (r'\.substring\([^)]*\)', 'substring 인덱스가 잘못될 수 있습니다', IssueSeverity.MEDIUM),
         (r'\.substr\([^)]*\)', 'substr 인덱스가 잘못될 수 있습니다', IssueSeverity.MEDIUM),
+        (r'\.replace\([^)]*\)', 'replace 메서드 호출시 정규식 오류가 발생할 수 있습니다', IssueSeverity.LOW),
+        (r'\.match\([^)]*\)', 'match 메서드 호출시 정규식 오류가 발생할 수 있습니다', IssueSeverity.LOW),
     ],
     'comparison_issues': [
         (r'==\s*null', 'null 비교시 === 사용을 권장합니다', IssueSeverity.LOW),
         (r'==\s*undefined', 'undefined 비교시 === 사용을 권장합니다', IssueSeverity.LOW),
         (r'[^=!<>]=[^=]', '할당 연산자 확인 필요 (= vs ==)', IssueSeverity.MEDIUM),
+        (r'[^=!<>]!=[^=]', '불일치 연산자 확인 필요 (!= vs !==)', IssueSeverity.LOW),
+        (r'[^=!<>]=[^=]', '할당 연산자 확인 필요 (= vs ==)', IssueSeverity.MEDIUM),
+        (r'typeof\s+\w+\s*==\s*["\']string["\']', 'typeof 비교시 === 사용을 권장합니다', IssueSeverity.LOW),
     ],
     'performance_issues': [
         (r'console\.log\(', 'console.log는 프로덕션에서 제거해야 합니다', IssueSeverity.LOW),
         (r'for\s*\(\s*;\s*;\s*\)', '무한 루프 위험이 있습니다', IssueSeverity.HIGH),
         (r'while\s*\(\s*true\s*\)', '무한 루프 위험이 있습니다', IssueSeverity.HIGH),
+        (r'for\s*\(\s*var\s+\w+\s*=\s*0;\s*\w+\s*<\s*\w+\.length;\s*\w+\+\+\)', 'for 루프에서 length를 매번 계산하고 있습니다', IssueSeverity.MEDIUM),
+        (r'\.innerHTML\s*\+=', 'innerHTML += 사용시 성능 저하가 발생할 수 있습니다', IssueSeverity.MEDIUM),
+        (r'setInterval\s*\([^,]+,\s*[0-9]+\)', 'setInterval 사용시 메모리 누수가 발생할 수 있습니다', IssueSeverity.MEDIUM),
+    ],
+    'error_handling': [
+        (r'try\s*\{[^}]*\}\s*catch\s*\([^)]*\)\s*\{[^}]*\}', 'catch 블록이 비어있거나 적절한 처리가 없습니다', IssueSeverity.MEDIUM),
+        (r'throw\s+new\s+Error\s*\([^)]*\)', 'Error 객체 생성시 적절한 메시지를 포함하세요', IssueSeverity.LOW),
+        (r'\.catch\s*\([^)]*\)\s*\{[^}]*\}', 'Promise catch 블록이 비어있거나 적절한 처리가 없습니다', IssueSeverity.MEDIUM),
     ],
     'unnecessary_code': [
         (r'var\s+\w+\s*=\s*undefined', 'undefined 할당은 불필요합니다', IssueSeverity.LOW),
+        (r'var\s+\w+\s*=\s*null', 'null 할당이 필요한지 확인하세요', IssueSeverity.LOW),
+        (r'return\s*;', 'return 문이 값을 반환하지 않습니다', IssueSeverity.LOW),
+        (r'if\s*\([^)]*\)\s*\{[^}]*\}\s*else\s*\{[^}]*\}', 'if-else 블록이 비어있습니다', IssueSeverity.LOW),
+    ],
+    'async_issues': [
+        (r'async\s+function\s+\w+\s*\([^)]*\)\s*\{[^}]*await\s+', 'async 함수에서 await 사용시 try-catch로 감싸세요', IssueSeverity.MEDIUM),
+        (r'Promise\s*\.\s*resolve\s*\([^)]*\)', 'Promise.resolve 사용시 적절한 에러 처리가 필요합니다', IssueSeverity.LOW),
+        (r'Promise\s*\.\s*reject\s*\([^)]*\)', 'Promise.reject 사용시 적절한 에러 처리가 필요합니다', IssueSeverity.LOW),
+    ],
+    'memory_leaks': [
+        (r'addEventListener\s*\([^)]*\)', 'addEventListener 사용시 removeEventListener로 정리해야 합니다', IssueSeverity.MEDIUM),
+        (r'setTimeout\s*\([^)]*\)', 'setTimeout 사용시 clearTimeout으로 정리해야 합니다', IssueSeverity.MEDIUM),
+        (r'setInterval\s*\([^)]*\)', 'setInterval 사용시 clearInterval로 정리해야 합니다', IssueSeverity.MEDIUM),
+        (r'new\s+Date\s*\([^)]*\)', 'Date 객체 생성이 반복적으로 발생하고 있습니다', IssueSeverity.LOW),
+    ],
+    'type_safety': [
+        (r'typeof\s+\w+\s*!==\s*["\']string["\']', '타입 체크 후 적절한 처리가 필요합니다', IssueSeverity.LOW),
+        (r'instanceof\s+\w+', 'instanceof 체크 후 적절한 처리가 필요합니다', IssueSeverity.LOW),
+        (r'Array\.isArray\s*\([^)]*\)', 'Array.isArray 체크 후 적절한 처리가 필요합니다', IssueSeverity.LOW),
+    ],
+    'code_style': [
+        (r'function\s+\w+\s*\([^)]*\)\s*\{[^}]{0,10}\}', '함수가 너무 짧습니다. 의미있는 로직이 있는지 확인하세요', IssueSeverity.LOW),
+        (r'var\s+\w+\s*,\s*\w+', '여러 변수를 한 줄에 선언하는 것은 가독성을 떨어뜨립니다', IssueSeverity.LOW),
+        (r'[^;]\s*$', '문장 끝에 세미콜론이 없습니다', IssueSeverity.LOW),
+        (r'[^}]\s*else\s*\{', 'else 앞에 중괄호가 없습니다', IssueSeverity.LOW),
     ]
 }
 
@@ -481,6 +541,8 @@ class PerformanceOptimizedAnalyzer:
     def _get_suggestion(self, category: str, message: str) -> str:
         """카테고리별 제안사항"""
         suggestions = {
+            'syntax_errors': '변수 선언 키워드를 올바르게 사용하고, 재귀 함수나 자기 참조를 피하세요.',
+            'variable_scope_issues': 'let/const를 사용하고, 스코프 문제를 방지하세요.',
             'null_reference': 'null 체크를 추가하거나 옵셔널 체이닝(?.)을 사용하세요.',
             'xss_security': 'innerText나 textContent를 사용하거나 입력값을 sanitize하세요.',
             'json_parsing': 'try-catch 블록으로 감싸서 예외 처리를 하세요.',
@@ -488,7 +550,13 @@ class PerformanceOptimizedAnalyzer:
             'string_operations': '인덱스 범위를 확인하거나 안전한 메서드를 사용하세요.',
             'comparison_issues': '엄격한 비교 연산자(===, !==)를 사용하세요.',
             'performance_issues': '프로덕션에서는 console.log를 제거하고 무한 루프를 방지하세요.',
-            'unnecessary_code': '불필요한 코드를 제거하세요.'
+            'error_handling': '적절한 에러 처리 로직을 추가하세요.',
+            'unnecessary_code': '불필요한 코드를 제거하세요.',
+            'async_issues': 'async/await 사용시 try-catch로 감싸고 적절한 에러 처리를 하세요.',
+            'memory_leaks': '이벤트 리스너나 타이머를 적절히 정리하세요.',
+            'type_safety': '타입 체크 후 적절한 처리를 추가하세요.',
+            'code_style': '코드 스타일 가이드를 따르고 가독성을 높이세요.',
+            'api': 'eXBuilder6 API 문서를 확인하고 올바른 메서드명을 사용하세요.'
         }
         return suggestions.get(category, '코드를 검토하고 개선하세요.')
     
@@ -533,6 +601,53 @@ class PerformanceOptimizedAnalyzer:
                     line_number=line_num
                 ))
         
+        # 추가 문법 검사
+        issues.extend(self._check_additional_syntax(code))
+        
+        return issues
+    
+    def _check_additional_syntax(self, code: str) -> List[AnalysisIssue]:
+        """추가 문법 검사"""
+        issues = []
+        
+        # 세미콜론 누락 검사
+        semicolon_pattern = r'([^;{}])\s*\n\s*([a-zA-Z_$])'
+        for match in re.finditer(semicolon_pattern, code):
+            line_num = code[:match.start()].count('\n') + 1
+            issues.append(self.create_issue(
+                category='code_style',
+                severity=IssueSeverity.LOW,
+                message="세미콜론이 누락되었습니다",
+                line_number=line_num
+            ))
+        
+        # 중복 변수 선언 검사
+        var_pattern = r'var\s+(\w+)'
+        declared_vars = {}
+        for match in re.finditer(var_pattern, code):
+            var_name = match.group(1)
+            line_num = code[:match.start()].count('\n') + 1
+            if var_name in declared_vars:
+                issues.append(self.create_issue(
+                    category='variable_scope_issues',
+                    severity=IssueSeverity.MEDIUM,
+                    message=f"변수 '{var_name}'가 중복 선언되었습니다",
+                    line_number=line_num
+                ))
+            else:
+                declared_vars[var_name] = line_num
+        
+        # 미사용 변수 검사
+        for var_name, line_num in declared_vars.items():
+            usage_pattern = rf'\b{var_name}\b(?!\s*=)'
+            if not re.search(usage_pattern, code[code.find('\n', code.find(var_name)):]):
+                issues.append(self.create_issue(
+                    category='unnecessary_code',
+                    severity=IssueSeverity.LOW,
+                    message=f"선언된 변수 '{var_name}'가 사용되지 않습니다",
+                    line_number=line_num
+                ))
+        
         return issues
     
     def check_exbuilder6_apis(self, code: str) -> List[AnalysisIssue]:
@@ -542,9 +657,9 @@ class PerformanceOptimizedAnalyzer:
         # app.lookup으로 찾은 컨트롤들의 변수명과 타입 매핑
         variable_controls = {}
         
-        # app.lookup 패턴 찾기
+        # app.lookup 패턴 찾기 (ar, var, let, const 모두 포함)
         lookup_patterns = [
-            r'(?:var|let|const)\s+(\w+)\s*=\s*app\.lookup\([\'"]([^\'"]+)[\'"]\)',
+            r'(?:ar|var|let|const)\s+(\w+)\s*=\s*app\.lookup\([\'"]([^\'"]+)[\'"]\)',
             r'(\w+)\s*=\s*app\.lookup\([\'"]([^\'"]+)[\'"]\)'
         ]
         
@@ -555,7 +670,7 @@ class PerformanceOptimizedAnalyzer:
                 if control_type != 'unknown':
                     variable_controls[var_name] = control_type
         
-        # 메서드 호출 패턴 찾기
+        # 메서드 호출 패턴 찾기 (오타 감지 포함)
         method_pattern = r'(\w+)\.(\w+)\('
         method_matches = re.findall(method_pattern, code)
         
@@ -567,8 +682,45 @@ class PerformanceOptimizedAnalyzer:
                 control_type = variable_controls[var_name]
                 api_issues = self.api_validator.validate_api_usage(var_name, method_name, control_type)
                 issues.extend(api_issues)
+            else:
+                # app.lookup으로 찾지 못한 변수에 대한 메서드 호출도 검사
+                # 일반적인 eXBuilder6 API 패턴과 비교
+                common_apis = EXBUILDER6_COMMON_APIS['methods']
+                if method_name not in common_apis:
+                    # 오타 가능성이 있는 API 이름 찾기
+                    similar_apis = self._find_similar_api(method_name, common_apis)
+                    if similar_apis:
+                        issues.append(self.create_issue(
+                            category='api',
+                            severity=IssueSeverity.HIGH,
+                            message=f"잘못된 API 호출: '{method_name}' 메서드가 존재하지 않습니다. "
+                                    f"유사한 API: {', '.join(similar_apis[:3])}",
+                            suggestion=f"올바른 API 이름을 확인하세요. 제안: {similar_apis[0] if similar_apis else 'API 문서 확인'}"
+                        ))
         
         return issues
+    
+    def _find_similar_api(self, method_name: str, api_list: List[str]) -> List[str]:
+        """유사한 API 이름 찾기 (오타 감지용)"""
+        similar_apis = []
+        
+        for api in api_list:
+            # 정확한 매칭
+            if api == method_name:
+                return []
+            
+            # 유사도 계산 (간단한 방법)
+            if len(api) >= len(method_name) - 2 and len(api) <= len(method_name) + 2:
+                # 공통 문자 수 계산
+                common_chars = sum(1 for c in method_name if c in api)
+                similarity = common_chars / max(len(method_name), len(api))
+                
+                if similarity >= 0.7:  # 70% 이상 유사
+                    similar_apis.append(api)
+        
+        # 유사도 순으로 정렬
+        similar_apis.sort(key=lambda x: sum(1 for c in method_name if c in x), reverse=True)
+        return similar_apis
     
     async def analyze_async(self, code: str) -> Dict:
         """비동기 분석"""

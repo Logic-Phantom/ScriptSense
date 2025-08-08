@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 interface AnalysisIssue {
   category: string;
   message: string;
-  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  severity: 'low' | 'medium' | 'high' | 'critical';
   priority: 'LOW' | 'MEDIUM' | 'HIGH';
   line_number?: number;
   suggestion: string;
@@ -189,16 +189,17 @@ function App() {
       return acc;
     }, {} as Record<string, AnalysisIssue[]>);
 
-    // Critical부터 Low 순으로 정렬
-    const severityOrder = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+    // Critical부터 Low 순으로 정렬 (소문자로 매칭)
+    const severityOrder = ['critical', 'high', 'medium', 'low'];
     
     severityOrder.forEach(severity => {
       if (issuesBySeverity[severity] && issuesBySeverity[severity].length > 0) {
-        const severityEmoji = severity === 'CRITICAL' ? '🔴' : 
-                             severity === 'HIGH' ? '🟠' : 
-                             severity === 'MEDIUM' ? '🟡' : '🟢';
+        const severityEmoji = severity === 'critical' ? '🔴' : 
+                             severity === 'high' ? '🟠' : 
+                             severity === 'medium' ? '🟡' : '🟢';
+        const severityDisplay = severity.toUpperCase();
         
-        output += `**${severityEmoji} ${severity} 심각도 문제점 (${issuesBySeverity[severity].length}개):**\n`;
+        output += `**${severityEmoji} ${severityDisplay} 심각도 문제점 (${issuesBySeverity[severity].length}개):**\n`;
         
         issuesBySeverity[severity].forEach((issue, index) => {
           const lineInfo = issue.line_number ? ` (라인 ${issue.line_number})` : '';
