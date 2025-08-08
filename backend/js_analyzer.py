@@ -280,70 +280,79 @@ def check_javascript_issues(code: str) -> List[str]:
     """
     issues = []
     
-    # JavaScript 문법 검사 (정확한 패턴 기반)
-    js_syntax_patterns = [
-        # 괄호 불일치 검사 - 더 정확한 패턴
-        (r'\{[^{}]*\{[^{}]*\}[^{}]*\}', '중첩된 중괄호 확인 필요'),
-        (r'\([^()]*\([^()]*\)[^()]*\)', '중첩된 괄호 확인 필요'),
-        (r'\[[^\[\]]*\[[^\[\]]*\][^\[\]]*\]', '중첩된 대괄호 확인 필요'),
-        
-        # 세미콜론 누락 가능성 - 더 정확한 패턴
-        (r'[^;{}]\s*\n\s*[a-zA-Z_$][^=]*=', '세미콜론 누락 가능성'),
-        
-        # 따옴표 불일치 - 더 정확한 패턴 (문자열 리터럴만)
-        (r'"[^"]*$', '따옴표가 닫히지 않았습니다'),
-        (r"'[^']*$", "따옴표가 닫히지 않았습니다"),
-        
-        # 함수 선언 문제
-        (r'function\s+\w+\s*\([^)]*\)\s*\{[^}]*$', '함수 정의가 완료되지 않았습니다'),
-        
-        # 변수 선언 문제
-        (r'(?:var|let|const)\s+\w+\s*[^;]*$', '변수 선언이 완료되지 않았습니다'),
-        
-        # 객체/배열 리터럴 문제
-        (r'\{[^}]*$', '객체 리터럴이 완료되지 않았습니다'),
-        (r'\[[^\]]*$', '배열 리터럴이 완료되지 않았습니다'),
-    ]
+    # 라인별로 코드를 분할하여 정확한 위치 찾기
+    lines = code.split('\n')
     
-    for pattern, message in js_syntax_patterns:
-        if re.search(pattern, code, re.MULTILINE):
-            issues.append(f"문법 오류: {message}")
-    
-    # 일반적인 JavaScript 문제점들 검사
-    patterns = [
-        (r'var\s+\w+\s*=\s*undefined', 'undefined 할당은 불필요합니다'),
-        (r'==\s*null', 'null 비교시 === 사용을 권장합니다'),
-        (r'==\s*undefined', 'undefined 비교시 === 사용을 권장합니다'),
-        (r'console\.log\(', 'console.log는 프로덕션에서 제거해야 합니다'),
-        (r'eval\(', 'eval() 사용은 보안상 위험합니다'),
-        (r'setTimeout\([^,]+,\s*0\)', 'setTimeout(,0) 대신 setImmediate 사용을 고려하세요'),
-        (r'for\s*\(\s*;\s*;\s*\)', '무한 루프 위험이 있습니다'),
-        (r'while\s*\(\s*true\s*\)', '무한 루프 위험이 있습니다'),
-        # 할당 연산자 확인 - 더 정확한 패턴
-        (r'[^=!<>]=[^=]', '할당 연산자 확인 필요 (= vs ==)'),
-    ]
-    
-    for pattern, message in patterns:
-        if re.search(pattern, code):
-            issues.append(message)
-    
-    # 괄호 균형 검사
+    # 괄호 균형 검사 (라인별)
     brackets = {'(': ')', '{': '}', '[': ']'}
     stack = []
     
-    for char in code:
-        if char in brackets:
-            stack.append(char)
-        elif char in brackets.values():
-            if not stack:
-                issues.append("문법 오류: 닫는 괄호가 열리는 괄호보다 많습니다")
-                break
-            if brackets[stack.pop()] != char:
-                issues.append("문법 오류: 괄호가 올바르게 매칭되지 않습니다")
-                break
+    for line_num, line in enumerate(lines, 1):
+        for char_pos, char in enumerate(line):
+            if char in brackets:
+                stack.append((char, line_num, char_pos + 1))
+            elif char in brackets.values():
+                if not stack:
+                    issues.append(f"라인 {line_num} 위치 {char_pos + 1}: 닫는 괄호 '{char}'가 열리는 괄호보다 많습니다")
+                    break
+                open_bracket, open_line, open_pos = stack.pop()
+                if brackets[open_bracket] != char:
+                    issues.append(f"라인 {line_num} 위치 {char_pos + 1}: 괄호 '{char}'가 라인 {open_line} 위치 {open_pos}의 '{open_bracket}'와 매칭되지 않습니다")
+                    break
     
     if stack:
-        issues.append("문법 오류: 열린 괄호가 닫히지 않았습니다")
+        for bracket, line_num, char_pos in stack:
+            issues.append(f"라인 {line_num} 위치 {char_pos}: 열린 괄호 '{bracket}'가 닫히지 않았습니다")
+    
+    # 라인별 문법 검사
+    for line_num, line in enumerate(lines, 1):
+        # 세미콜론 누락 검사 (더 정확한 패턴)
+        if re.search(r'[^;{}]\s*$', line.strip()) and line.strip() and not line.strip().endswith('{') and not line.strip().endswith('}') and not line.strip().endswith('(') and not line.strip().endswith('['):
+            next_line_idx = line_num
+            if next_line_idx < len(lines):
+                next_line = lines[next_line_idx].strip()
+                if next_line and next_line[0].isalpha() and '=' in next_line:
+                    issues.append(f"라인 {line_num}: 세미콜론 누락 가능성")
+        
+        # 따옴표 불일치 검사
+        if line.count('"') % 2 != 0:
+            issues.append(f"라인 {line_num}: 큰따옴표가 닫히지 않았습니다")
+        if line.count("'") % 2 != 0:
+            issues.append(f"라인 {line_num}: 작은따옴표가 닫히지 않았습니다")
+        
+        # 함수 선언 문제 검사
+        if re.search(r'function\s+\w+\s*\([^)]*\)\s*\{[^}]*$', line):
+            issues.append(f"라인 {line_num}: 함수 정의가 완료되지 않았습니다")
+        
+        # 변수 선언 문제 검사
+        if re.search(r'(?:var|let|const)\s+\w+\s*[^;]*$', line) and not line.strip().endswith(';'):
+            issues.append(f"라인 {line_num}: 변수 선언이 완료되지 않았습니다")
+        
+        # 객체/배열 리터럴 문제 검사
+        if re.search(r'\{[^}]*$', line) and not line.strip().endswith('}'):
+            issues.append(f"라인 {line_num}: 객체 리터럴이 완료되지 않았습니다")
+        if re.search(r'\[[^\]]*$', line) and not line.strip().endswith(']'):
+            issues.append(f"라인 {line_num}: 배열 리터럴이 완료되지 않았습니다")
+        
+        # 할당 연산자 확인
+        if re.search(r'[^=!<>]=[^=]', line):
+            issues.append(f"라인 {line_num}: 할당 연산자 확인 필요 (= vs ==)")
+        
+        # 일반적인 JavaScript 문제점들
+        if re.search(r'var\s+\w+\s*=\s*undefined', line):
+            issues.append(f"라인 {line_num}: undefined 할당은 불필요합니다")
+        if re.search(r'==\s*null', line):
+            issues.append(f"라인 {line_num}: null 비교시 === 사용을 권장합니다")
+        if re.search(r'==\s*undefined', line):
+            issues.append(f"라인 {line_num}: undefined 비교시 === 사용을 권장합니다")
+        if re.search(r'console\.log\(', line):
+            issues.append(f"라인 {line_num}: console.log는 프로덕션에서 제거해야 합니다")
+        if re.search(r'eval\(', line):
+            issues.append(f"라인 {line_num}: eval() 사용은 보안상 위험합니다")
+        if re.search(r'for\s*\(\s*;\s*;\s*\)', line):
+            issues.append(f"라인 {line_num}: 무한 루프 위험이 있습니다")
+        if re.search(r'while\s*\(\s*true\s*\)', line):
+            issues.append(f"라인 {line_num}: 무한 루프 위험이 있습니다")
     
     return issues if issues else ['JavaScript 문법에 문제없음']
 
@@ -382,6 +391,10 @@ def check_exbuilder6_apis(code: str) -> List[str]:
     method_matches = re.findall(method_pattern, code)
     
     for var_name, method_name in method_matches:
+        # app.lookup은 올바른 사용이므로 제외
+        if method_name == 'lookup':
+            continue
+            
         if var_name in variable_controls:
             control_type = variable_controls[var_name]
             if control_type in EXBUILDER6_CONTROL_APIS:
@@ -395,7 +408,9 @@ def check_exbuilder6_apis(code: str) -> List[str]:
                 if method_name not in EXBUILDER6_MESSAGE_APIS['methods']:
                     # 데이터 API에서 확인
                     if method_name not in EXBUILDER6_DATA_APIS['methods']:
-                        incorrect_apis.append(f"존재하지 않는 메서드: {method_name}")
+                        # FileInput 관련 특수 메서드 확인
+                        if method_name not in ['addFileParameter', 'removeFileParameter', 'getFileParameter', 'setFileParameter']:
+                            incorrect_apis.append(f"존재하지 않는 메서드: {method_name}")
     
     # 속성 접근 패턴 찾기 - 잘못된 사용만 보고 (한글 설명: 속성 접근 패턴을 찾아서 잘못된 사용만 검출)
     # 메서드 호출을 제외한 속성 접근만 찾기
@@ -410,6 +425,10 @@ def check_exbuilder6_apis(code: str) -> List[str]:
     for var_name, property_name in property_matches:
         # 메서드 호출이 아닌 경우만 처리
         if f"{var_name}.{property_name}" not in method_calls:
+            # 일반적인 JavaScript 속성들은 제외
+            if property_name in ['length', 'files', 'control', 'lookup']:
+                continue
+                
             if var_name in variable_controls:
                 control_type = variable_controls[var_name]
                 if control_type in EXBUILDER6_CONTROL_APIS:
@@ -725,146 +744,131 @@ def check_errors(code: str) -> List[str]:
 
 def analyze_execution_flow(code: str) -> List[str]:
     """
-    실행 흐름 분석 - 스토리텔링 방식
+    실행 흐름 분석 - 프로세스 중심 설명
     
     이 함수는 JavaScript 코드의 실행 흐름을 다음과 같은 방식으로 분석합니다:
-    1. 함수별로 스토리텔링 방식의 실행 흐름 분석
+    1. 함수별로 프로세스 중심의 실행 흐름 분석
     2. 이벤트 핸들러 감지 및 설명
     3. 비동기 작업 감지 및 설명
     4. eXBuilder6 API 호출 감지 및 설명
-    5. 전체적인 실행 흐름을 이야기 형태로 제공
+    5. 전체적인 실행 흐름을 프로세스 형태로 제공
     """
     flow = []
     
-    # 함수별로 분석 (한글 설명: 함수 정의를 찾아서 각각의 실행 흐름을 스토리텔링 방식으로 분석)
+    # 함수별로 분석
     functions = re.findall(r'function\s+(\w+)\s*\([^)]*\)\s*\{([^}]+)\}', code, re.DOTALL)
     if functions:
         for func_name, func_body in functions:
-            flow.append(f"📖 함수 '{func_name}'의 이야기:")
-            
-            # 함수 내부 로직을 스토리텔링 방식으로 분석
-            story_steps = []
-            
-            # 변수 선언 (한글 설명: 함수 내에서 선언된 변수들을 찾아서 설명)
-            var_decls = re.findall(r'(?:var|let|const)\s+(\w+)', func_body)
-            if var_decls:
-                story_steps.append(f"  🎭 먼저 {', '.join(var_decls)} 변수들을 준비합니다.")
-            
-            # 조건문 (한글 설명: if, else if, else 등의 조건문을 찾아서 설명)
-            if 'if' in func_body:
-                story_steps.append("  🤔 조건을 확인하여 분기점을 만듭니다.")
-            
-            # 반복문 (한글 설명: for, while, do 등의 반복문을 찾아서 설명)
-            if any(keyword in func_body for keyword in ['for', 'while', 'do']):
-                story_steps.append("  🔄 반복적으로 작업을 수행합니다.")
-            
-            # 함수 호출 (한글 설명: 다른 함수들을 호출하는 부분을 찾아서 설명)
-            func_calls = re.findall(r'(\w+)\(', func_body)
-            if func_calls:
-                story_steps.append(f"  📞 {', '.join(func_calls)} 함수들을 호출하여 작업을 수행합니다.")
-            
-            # eXBuilder6 API 호출 (한글 설명: eXBuilder6의 API들을 호출하는 부분을 찾아서 설명)
-            exbuilder_calls = re.findall(r'(\w+)\.(\w+)\(', func_body)
-            if exbuilder_calls:
-                # 컨트롤 타입별 메서드 검증 (API Reference 기반)
-                control_methods = {
-                    'grd': EXBUILDER6_CONTROL_APIS['grd']['methods'],
-                    'button': EXBUILDER6_CONTROL_APIS['button']['methods'],
-                    'btn': EXBUILDER6_CONTROL_APIS['btn']['methods'],
-                    'calendar': EXBUILDER6_CONTROL_APIS['calendar']['methods'],
-                    'cal': EXBUILDER6_CONTROL_APIS['cal']['methods'],
-                    'cbx': EXBUILDER6_CONTROL_APIS['cbx']['methods'],
-                    'cbg': EXBUILDER6_CONTROL_APIS.get('cbg', {}).get('methods', []),
-                    'cmb': EXBUILDER6_CONTROL_APIS['cmb']['methods'],
-                    'dm': EXBUILDER6_CONTROL_APIS.get('dm', {}).get('methods', []),
-                    'ds': EXBUILDER6_CONTROL_APIS.get('ds', {}).get('methods', []),
-                    'dv': EXBUILDER6_CONTROL_APIS.get('dv', {}).get('methods', []),
-                    'dw': EXBUILDER6_CONTROL_APIS.get('dw', {}).get('methods', []),
-                    'dti': EXBUILDER6_CONTROL_APIS.get('dti', {}).get('methods', []),
-                    'fi': EXBUILDER6_CONTROL_APIS.get('fi', {}).get('methods', []),
-                    'fud': EXBUILDER6_CONTROL_APIS.get('fud', {}).get('methods', []),
-                    'ipb': EXBUILDER6_CONTROL_APIS['ipb']['methods'],
-                    'lcb': EXBUILDER6_CONTROL_APIS.get('lcb', {}).get('methods', []),
-                    'llb': EXBUILDER6_CONTROL_APIS.get('llb', {}).get('methods', []),
-                    'lbx': EXBUILDER6_CONTROL_APIS.get('lbx', {}).get('methods', []),
-                    'mse': EXBUILDER6_CONTROL_APIS.get('mse', {}).get('methods', []),
-                    'mdi': EXBUILDER6_CONTROL_APIS.get('mdi', {}).get('methods', []),
-                    'nbe': EXBUILDER6_CONTROL_APIS.get('nbe', {}).get('methods', []),
-                    'pgr': EXBUILDER6_CONTROL_APIS.get('pgr', {}).get('methods', []),
-                    'rdb': EXBUILDER6_CONTROL_APIS.get('rdb', {}).get('methods', []),
-                    'sip': EXBUILDER6_CONTROL_APIS.get('sip', {}).get('methods', []),
-                    'sld': EXBUILDER6_CONTROL_APIS.get('sld', {}).get('methods', []),
-                    'tab': EXBUILDER6_CONTROL_APIS.get('tab', {}).get('methods', []),
-                    'txa': EXBUILDER6_CONTROL_APIS['txa']['methods'],
-                    'tre': EXBUILDER6_CONTROL_APIS['tre']['methods']
-                }
-                
-                api_calls = []
-                for var_name, method_name in exbuilder_calls:
-                    # 변수명에서 컨트롤 타입 추정 (간단한 패턴 매칭)
-                    control_type = None
-                    for prefix in control_methods.keys():
-                        if var_name.startswith(prefix) or var_name.endswith(prefix):
-                            control_type = prefix
-                            break
-                    
-                    if control_type and method_name in control_methods[control_type]:
-                        api_calls.append(f"{control_type}.{method_name}")
-                    elif method_name in EXBUILDER6_MESSAGE_APIS['methods']:
-                        api_calls.append(method_name)
-                    elif method_name in EXBUILDER6_COMMON_APIS['methods']:
-                        api_calls.append(method_name)
-                
-                if api_calls:
-                    story_steps.append(f"  🎮 eXBuilder6 컨트롤들과 상호작용합니다: {', '.join(api_calls)}")
-            
-            # 예외 처리 (한글 설명: try-catch 블록을 찾아서 설명)
-            if 'try' in func_body or 'catch' in func_body:
-                story_steps.append("  🛡️ 예상치 못한 상황에 대비하여 안전장치를 마련합니다.")
-            
-            # 반환값 (한글 설명: return 문을 찾아서 설명)
-            if 'return' in func_body:
-                story_steps.append("  📤 작업 결과를 반환합니다.")
-            
-            if story_steps:
-                flow.extend(story_steps)
-            else:
-                flow.append("  📝 순차적으로 작업을 진행합니다.")
+            # 함수의 목적과 프로세스 분석
+            process_description = analyze_function_process(func_name, func_body)
+            flow.append(process_description)
     
-    # 이벤트 핸들러 찾기 (한글 설명: this.onXXX 형태의 이벤트 핸들러를 찾아서 설명)
+    # 이벤트 핸들러 찾기
     event_handlers = re.findall(r'this\.(on\w+)\s*=', code)
     if event_handlers:
-        flow.append(f"🎯 사용자 이벤트를 기다리는 감시자들: {', '.join(event_handlers)}")
+        flow.append(f"이벤트 핸들러: {', '.join(event_handlers)}")
     
-    # 비동기 작업 찾기 (한글 설명: setTimeout, setInterval, fetch, Promise, async, await 등을 찾아서 설명)
+    # 비동기 작업 찾기
     async_matches = re.findall(r'(setTimeout|setInterval|fetch|Promise|async|await)', code)
     if async_matches:
         unique_async = list(set(async_matches))
-        flow.append(f"⏰ 시간이 걸리는 작업들을 처리합니다: {', '.join(unique_async)}")
+        flow.append(f"비동기 작업: {', '.join(unique_async)}")
     
-    # 전역 실행 흐름을 스토리텔링으로 (한글 설명: 전체 코드의 실행 흐름을 이야기 형태로 설명)
-    global_story = []
+    # 전체 실행 흐름 요약
+    total_functions = len(functions)
+    total_events = len(event_handlers)
+    total_async = len(unique_async) if async_matches else 0
     
-    # 조건문 (한글 설명: 전체 코드에서 if 문의 개수를 세어서 설명)
-    conditional_count = len(re.findall(r'\bif\b', code))
-    if conditional_count > 0:
-        global_story.append(f"🤔 {conditional_count}개의 분기점에서 상황에 따라 다른 길을 선택합니다.")
+    if total_functions > 0 or total_events > 0:
+        flow.append(f"전체 프로세스: {total_functions}개 함수, {total_events}개 이벤트 핸들러, {total_async}개 비동기 작업으로 구성")
     
-    # 반복문 (한글 설명: 전체 코드에서 반복문의 개수를 세어서 설명)
-    loop_count = len(re.findall(r'\b(for|while|do)\b', code))
-    if loop_count > 0:
-        global_story.append(f"🔄 {loop_count}개의 반복 작업으로 데이터를 처리합니다.")
+    return flow if flow else ['간단한 순차적 실행 프로세스']
+
+def analyze_function_process(func_name: str, func_body: str) -> str:
+    """
+    함수의 프로세스를 분석하여 설명 생성
+    """
+    # 함수명에서 목적 추정
+    purpose = analyze_function_purpose(func_name)
     
-    # 함수 호출 (한글 설명: 전체 코드에서 함수 호출의 개수를 세어서 설명)
-    function_calls = len(re.findall(r'\w+\(', code))
-    if function_calls > 0:
-        global_story.append(f"📞 {function_calls}개의 함수 호출로 복잡한 작업을 분담합니다.")
+    # 주요 작업 분석
+    operations = []
     
-    if global_story:
-        flow.append("🌍 전체 이야기의 흐름:")
-        flow.extend([f"  {step}" for step in global_story])
+    # app.lookup 호출 확인
+    if 'app.lookup' in func_body:
+        operations.append("컨트롤 객체를 찾습니다")
     
-    return flow if flow else ['📖 간단한 순차적 실행 이야기']
+    # 파일 관련 작업 확인
+    if any(keyword in func_body for keyword in ['file', 'files', 'addFileParameter']):
+        operations.append("파일 처리를 수행합니다")
+    
+    # 데이터 처리 확인
+    if any(keyword in func_body for keyword in ['data', 'setData', 'getData']):
+        operations.append("데이터를 처리합니다")
+    
+    # 조건문 확인
+    if 'if' in func_body:
+        operations.append("조건에 따라 분기합니다")
+    
+    # 반복문 확인
+    if any(keyword in func_body for keyword in ['for', 'while', 'do']):
+        operations.append("반복 작업을 수행합니다")
+    
+    # eXBuilder6 API 호출 확인
+    exbuilder_calls = re.findall(r'(\w+)\.(\w+)\(', func_body)
+    if exbuilder_calls:
+        api_operations = []
+        for var_name, method_name in exbuilder_calls:
+            if method_name in ['setValue', 'getValue', 'setText', 'getText']:
+                api_operations.append("컨트롤 값을 설정/가져옵니다")
+            elif method_name in ['addFileParameter', 'removeFileParameter']:
+                api_operations.append("파일 파라미터를 관리합니다")
+            elif method_name in ['addRow', 'deleteRow', 'updateRow']:
+                api_operations.append("데이터 행을 관리합니다")
+            elif method_name in ['show', 'hide', 'enable', 'disable']:
+                api_operations.append("컨트롤 상태를 변경합니다")
+        
+        if api_operations:
+            operations.extend(list(set(api_operations)))  # 중복 제거
+    
+    # 프로세스 설명 생성
+    if operations:
+        return f"{func_name} 함수: {purpose} - {', '.join(operations)}"
+    else:
+        return f"{func_name} 함수: {purpose} - 기본 작업을 수행합니다"
+
+def analyze_function_purpose(func_name: str) -> str:
+    """
+    함수명을 분석하여 목적 추정
+    """
+    func_name_lower = func_name.lower()
+    
+    if 'onload' in func_name_lower or 'init' in func_name_lower:
+        return "초기화"
+    elif 'click' in func_name_lower:
+        return "클릭 이벤트 처리"
+    elif 'change' in func_name_lower:
+        return "값 변경 이벤트 처리"
+    elif 'file' in func_name_lower:
+        return "파일 처리"
+    elif 'data' in func_name_lower:
+        return "데이터 처리"
+    elif 'submit' in func_name_lower:
+        return "제출 처리"
+    elif 'validate' in func_name_lower:
+        return "유효성 검사"
+    elif 'save' in func_name_lower:
+        return "저장 처리"
+    elif 'delete' in func_name_lower:
+        return "삭제 처리"
+    elif 'update' in func_name_lower:
+        return "업데이트 처리"
+    elif 'add' in func_name_lower:
+        return "추가 처리"
+    elif 'remove' in func_name_lower:
+        return "제거 처리"
+    else:
+        return "일반 처리"
 
 def analyze_with_llm(code: str, fast_mode: bool = False) -> Dict[str, Any]:
     """
@@ -1075,3 +1079,131 @@ async def analyze_javascript_detailed(request: JavaScriptAnalysisRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"분석 중 오류 발생: {str(e)}")
+
+@router.post("/analyze/batch")
+async def analyze_javascript_batch(request: JavaScriptAnalysisRequest):
+    """
+    대용량 JavaScript 코드 배치 분석
+    
+    이 엔드포인트는 대용량 JavaScript 코드를 배치 단위로 분석합니다:
+    1. 코드를 청크 단위로 분할
+    2. 각 청크별로 병렬 분석 수행
+    3. 결과를 통합하여 반환
+    4. 메모리 효율적인 처리
+    
+    Args:
+        request (JavaScriptAnalysisRequest): 분석할 JavaScript 코드와 분석 모드
+        
+    Returns:
+        dict: 배치 분석 결과
+        
+    Raises:
+        HTTPException: 분석 중 오류 발생시
+    """
+    try:
+        code = request.code
+        code_length = len(code)
+        
+        # 코드 크기에 따른 배치 크기 결정
+        if code_length <= 1000:
+            # 작은 코드는 일반 분석 사용
+            return await analyze_javascript(request)
+        elif code_length <= 10000:
+            batch_size = 1000
+        elif code_length <= 50000:
+            batch_size = 2000
+        else:
+            batch_size = 5000
+        
+        # 코드를 배치로 분할
+        batches = split_code_into_batches(code, batch_size)
+        
+        # 배치별 분석 결과 수집
+        batch_results = []
+        for i, batch in enumerate(batches):
+            batch_request = JavaScriptAnalysisRequest(code=batch, fast_mode=request.fast_mode)
+            batch_result = await analyze_javascript(batch_request)
+            batch_results.append({
+                'batch_index': i,
+                'batch_size': len(batch),
+                'result': batch_result
+            })
+        
+        # 결과 통합
+        combined_result = combine_batch_results(batch_results)
+        
+        return {
+            "analysis_type": "batch",
+            "total_code_length": code_length,
+            "batch_count": len(batches),
+            "batch_size": batch_size,
+            "combined_result": combined_result,
+            "batch_results": batch_results
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"배치 분석 중 오류 발생: {str(e)}")
+
+def split_code_into_batches(code: str, batch_size: int) -> List[str]:
+    """
+    코드를 배치 단위로 분할
+    
+    Args:
+        code (str): 분석할 JavaScript 코드
+        batch_size (int): 배치 크기
+        
+    Returns:
+        List[str]: 배치로 분할된 코드 리스트
+    """
+    batches = []
+    lines = code.split('\n')
+    current_batch = []
+    current_size = 0
+    
+    for line in lines:
+        line_size = len(line) + 1  # +1 for newline
+        
+        if current_size + line_size > batch_size and current_batch:
+            # 현재 배치가 가득 찬 경우 저장
+            batches.append('\n'.join(current_batch))
+            current_batch = [line]
+            current_size = line_size
+        else:
+            # 현재 배치에 추가
+            current_batch.append(line)
+            current_size += line_size
+    
+    # 마지막 배치 추가
+    if current_batch:
+        batches.append('\n'.join(current_batch))
+    
+    return batches
+
+def combine_batch_results(batch_results: List[dict]) -> dict:
+    """
+    배치 분석 결과를 통합
+    
+    Args:
+        batch_results (List[dict]): 배치별 분석 결과
+        
+    Returns:
+        dict: 통합된 분석 결과
+    """
+    combined = {
+        'javascript_issues': [],
+        'exbuilder6_apis': [],
+        'errors': [],
+        'execution_flow': []
+    }
+    
+    for batch_result in batch_results:
+        result = batch_result['result']
+        
+        # 중복 제거하면서 결과 통합
+        for key in combined.keys():
+            if key in result:
+                for item in result[key]:
+                    if item not in combined[key]:
+                        combined[key].append(item)
+    
+    return combined
