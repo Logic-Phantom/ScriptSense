@@ -5,6 +5,7 @@ interface JavaScriptAnalysisResult {
   exbuilder6_apis: string[];
   errors: string[];
   execution_flow: string[];
+  llm_analysis?: string;
 }
 
 function App() {
@@ -132,6 +133,12 @@ function App() {
     analysis.execution_flow.forEach(step => {
       output += `- ${step}\n`;
     });
+
+    // 5. LM Studio 분석 결과 (있는 경우)
+    if (analysis.llm_analysis) {
+      output += '\n**5. LM Studio 상세 분석:**\n';
+      output += analysis.llm_analysis;
+    }
 
     return output;
   };
