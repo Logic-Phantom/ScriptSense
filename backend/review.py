@@ -6,60 +6,32 @@ from llm_client import request_llm, request_llm_fast
 router = APIRouter()
 
 PROMPT_TEMPLATE = """
-당신은 JavaScript 코드 리뷰 전문가입니다. 다음 코드를 정확히 분석하여 마크다운 형식으로 답변해주세요.
+eXBuilder6 코드 분석: 다음 코드를 분석하세요.
 
-**코드 유형**: 이 코드는 특정 UI 솔루션의 API를 사용하는 JavaScript 코드입니다. `app.lookup()`, `addFileParameter()` 등의 메서드는 해당 UI 솔루션의 전용 API입니다.
+**분석:**
+1. 오류 지점 (문법, 타입, API 오류)
+2. 경고 지점 (성능, 스타일, 잠재적 문제)
+3. 개선 제안 (구체적 수정 코드)
+4. 실행 흐름 (단계별 동작 과정)
 
-**eXBuilder6 API 참고사항** (해당하는 경우):
-- `cpr.controls`: UI 컨트롤 관련 API
-- `cpr.core`: 핵심 기능 API  
-- `cpr.events`: 이벤트 처리 API
-- `cpr.data`: 데이터 처리 API
-- `app.lookup()`: 컴포넌트 조회
-- `addFileParameter()`: 파일 파라미터 추가
-
-**분석 요구사항:**
-1. **코드 스타일 및 오류 분석**: 
-   - JavaScript 문법 오류
-   - 변수명 오타 (예: `subFIle` → `submit`)
-   - 코드 스타일 문제
-   - UI 솔루션 API 사용법 오류
-   - eXBuilder6 API 사용법 검증
-
-2. **구체적인 리팩토링 제안**: 
-   - 실제 개선 가능한 부분만 제시
-   - UI 솔루션 API의 올바른 사용법 제안
-   - eXBuilder6 모범 사례 적용
-
-3. **실행 흐름 설명**: 
-   - 코드가 실제로 어떻게 동작하는지 단계별로 설명
-   - UI 솔루션 API 호출 흐름 포함
-   - eXBuilder6 이벤트 처리 흐름
-
-**중요**: 
-- 코드에 실제로 존재하는 내용만 분석
-- 존재하지 않는 속성이나 메서드는 언급하지 마세요
-- UI 솔루션의 전용 API임을 고려하여 분석
-- eXBuilder6 API 문서 참조: http://edu.tomatosystem.co.kr:8081/help/nav/0_10
+**중요**: 실제 발견된 문제만 언급, 라인 번호 명시
 
 ```javascript
 {code}
 ```
 
-**응답 형식:**
-## 1. 코드 스타일 및 오류 분석
-- JavaScript 문법 및 스타일 문제
-- UI 솔루션 API 사용법 문제
-- eXBuilder6 API 사용법 검증
+**응답:**
+## 1. 오류 지점
+- **라인 X**: 구체적 오류
 
-## 2. 리팩토링 제안  
-- 구체적인 개선 방안
-- UI 솔루션 API 최적화 제안
-- eXBuilder6 모범 사례 적용
+## 2. 경고 지점  
+- **라인 X**: 구체적 경고
 
-## 3. 실행 흐름
-1단계: ...
-2단계: ...
+## 3. 개선 제안
+- 구체적 수정 코드
+
+## 4. 실행 흐름
+- 단계별 상세 동작 과정
 """
 
 class ReviewRequest(BaseModel):
@@ -71,11 +43,19 @@ class ReviewRequest(BaseModel):
 async def review_code(request: ReviewRequest):
     print(f"[LOG] /api/review/text called (ui_framework: {request.ui_framework})")
     
+    # 코드 길이 확인 및 분할 처리
+    code_length = len(request.code)
+    estimated_tokens = code_length // 4
+    
+    if estimated_tokens > 3000:  # 3000 토큰 이상이면 분할 처리
+        print(f"[LOG] Large code detected ({estimated_tokens} tokens), splitting...")
+        return await review_large_code(request)
+    
     # UI 프레임워크별 프롬프트 커스터마이징
     if request.ui_framework.lower() == "nexacro":
         prompt = PROMPT_TEMPLATE.replace("특정 UI 솔루션", "Nexacro Platform").format(code=request.code)
     elif request.ui_framework.lower() == "exbuilder":
-        prompt = PROMPT_TEMPLATE.replace("특정 UI 솔루션", "eXBuilder6").replace("`app.lookup()`, `addFileParameter()` 등의 메서드는 해당 UI 솔루션의 전용 API입니다.", "`app.lookup()`, `addFileParameter()` 등의 메서드는 eXBuilder6의 전용 API입니다. eXBuilder6는 cpr.controls, cpr.core, cpr.events 등의 네임스페이스를 사용합니다.").format(code=request.code)
+        prompt = PROMPT_TEMPLATE.format(code=request.code)
     else:
         prompt = PROMPT_TEMPLATE.format(code=request.code)
     
@@ -83,6 +63,98 @@ async def review_code(request: ReviewRequest):
     result = request_llm_fast(prompt) if request.fast_mode else request_llm(prompt)
     print("[LOG] LLM call finished. Returning result.")
     return {"result": result}
+
+async def review_large_code(request: ReviewRequest):
+    """대용량 코드를 함수별로 분할하여 분석"""
+    code = request.code
+    
+    # 함수별로 분할
+    functions = split_code_by_functions(code)
+    
+    if len(functions) <= 1:
+        # 함수로 분할할 수 없으면 줄 단위로 분할
+        chunks = split_code_by_lines(code, max_lines=100)
+        results = []
+        for i, chunk in enumerate(chunks):
+            prompt = f"""eXBuilder6 코드 청크 분석: 청크 {i+1}/{len(chunks)}를 분석하세요.
+
+**분석:** 오류, 경고, 개선안, 실행흐름
+
+```javascript
+{chunk}
+```
+
+**응답:**
+## 오류 지점
+- **라인 X**: 구체적 오류
+
+## 경고 지점  
+- **라인 X**: 구체적 경고
+
+## 개선 제안
+- 구체적 수정 코드
+
+## 실행 흐름
+- 단계별 상세 동작 과정"""
+            result = request_llm_fast(prompt) if request.fast_mode else request_llm(prompt)
+            results.append(f"## 청크 {i+1}\n{result}")
+        
+        return {"result": "\n\n".join(results)}
+    else:
+        # 함수별로 분석
+        results = []
+        for func_name, func_code in functions.items():
+            prompt = f"""eXBuilder6 함수 분석: '{func_name}' 함수를 분석하세요.
+
+**분석:** 오류, 경고, 개선안, 실행흐름
+
+```javascript
+{func_code}
+```
+
+**응답:**
+## 오류 지점
+- **라인 X**: 구체적 오류
+
+## 경고 지점  
+- **라인 X**: 구체적 경고
+
+## 개선 제안
+- 구체적 수정 코드
+
+## 실행 흐름
+- 단계별 상세 동작 과정"""
+            result = request_llm_fast(prompt) if request.fast_mode else request_llm(prompt)
+            results.append(f"## 함수: {func_name}\n{result}")
+        
+        return {"result": "\n\n".join(results)}
+
+def split_code_by_functions(code: str):
+    """코드를 함수별로 분할"""
+    import re
+    
+    # 함수 정의 패턴 찾기
+    function_pattern = r'function\s+(\w+)\s*\([^)]*\)\s*\{[^}]*\}'
+    matches = re.finditer(function_pattern, code, re.DOTALL)
+    
+    functions = {}
+    for match in matches:
+        func_name = match.group(1)
+        func_code = match.group(0)
+        functions[func_name] = func_code
+    
+    return functions
+
+def split_code_by_lines(code: str, max_lines: int = 100):
+    """코드를 줄 단위로 분할"""
+    lines = code.split('\n')
+    chunks = []
+    
+    for i in range(0, len(lines), max_lines):
+        chunk = '\n'.join(lines[i:i + max_lines])
+        chunks.append(chunk)
+    
+    return chunks
 
 @router.post("/file")
 async def review_file(file: UploadFile = File(...), fast_mode: bool = False):
