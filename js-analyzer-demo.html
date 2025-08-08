@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JavaScript 코드 분석 도구</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .input-section, .output-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        textarea {
+            width: 100%;
+            height: 300px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            resize: vertical;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 0;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .output {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .example-buttons {
+            margin: 10px 0;
+        }
+        .example-buttons button {
+            margin-right: 10px;
+            margin-bottom: 5px;
+            background-color: #6c757d;
+            font-size: 12px;
+        }
+        .example-buttons button:hover {
+            background-color: #545b62;
+        }
+    </style>
+</head>
+<body>
+    <h1>JavaScript 코드 분석 도구</h1>
+    
+    <div class="container">
+        <div class="input-section">
+            <h3>JavaScript 코드 입력</h3>
+            <div class="example-buttons">
+                <button onclick="loadExample('basic')">기본 예제</button>
+                <button onclick="loadExample('exbuilder')">eXBuilder6 예제</button>
+                <button onclick="loadExample('error')">오류 예제</button>
+                <button onclick="clearCode()">코드 지우기</button>
+            </div>
+            <textarea id="codeInput" placeholder="분석할 JavaScript 코드를 입력하세요..."></textarea>
+            <button onclick="analyzeCode()">코드 분석</button>
+        </div>
+        
+        <div class="output-section">
+            <h3>분석 결과</h3>
+            <div id="output" class="output">분석 결과가 여기에 표시됩니다.</div>
+        </div>
+    </div>
+
+    <script src="js-analyzer.js"></script>
+    <script>
+        const examples = {
+            basic: `// 기본 JavaScript 예제
+function calculateSum(a, b) {
+    if (a == null || b == undefined) {
+        return 0;
+    }
+    return a + b;
+}
+
+const result = calculateSum(5, 3);
+console.log(result);
+
+document.getElementById('output').innerHTML = result;`,
+
+            exbuilder: `// eXBuilder6 API 사용 예제
+this.onLoad = function() {
+    this.form.setValue('field1', 'Hello');
+    this.grid.addRow({id: 1, name: 'Test'});
+    this.showMessage('데이터가 로드되었습니다.');
+};
+
+this.onClick = function() {
+    const value = this.form.getValue('field1');
+    if (value) {
+        this.grid.refresh();
+    }
+};`,
+
+            error: `// 오류가 있는 코드 예제
+function processData(data) {
+    const element = document.getElementById('nonexistent');
+    element.innerHTML = data; // null 참조 오류 가능성
+    
+    const jsonData = JSON.parse(data); // try-catch 없음
+    
+    const parts = data.split(',');
+    const firstPart = parts[0]; // 빈 배열 가능성
+    
+    eval('console.log("dangerous")'); // 보안 위험
+}`
+        };
+
+        function loadExample(type) {
+            document.getElementById('codeInput').value = examples[type] || '';
+        }
+
+        function clearCode() {
+            document.getElementById('codeInput').value = '';
+        }
+
+        function analyzeCode() {
+            const code = document.getElementById('codeInput').value;
+            if (!code.trim()) {
+                document.getElementById('output').textContent = '분석할 코드를 입력해주세요.';
+                return;
+            }
+
+            try {
+                const result = analyzeJavaScriptCode(code);
+                document.getElementById('output').textContent = result;
+            } catch (error) {
+                document.getElementById('output').textContent = `분석 중 오류가 발생했습니다: ${error.message}`;
+            }
+        }
+
+        // 페이지 로드시 기본 예제 로드
+        window.onload = function() {
+            loadExample('basic');
+        };
+    </script>
+</body>
+</html>
