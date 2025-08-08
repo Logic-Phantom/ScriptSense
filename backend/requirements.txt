@@ -5,3 +5,5 @@ transformers
 torch
 python-dotenv
 openai
+pydantic
+pyyaml

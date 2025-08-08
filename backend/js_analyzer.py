@@ -267,16 +267,16 @@ EXBUILDER6_DATA_APIS = {
 
 def check_javascript_issues(code: str) -> List[str]:
     """
-    JavaScript 문법/로직 문제점 검사
+    JavaScript 문법/로직 문제점 검사 (라인별 정확한 위치 표시)
     
     이 함수는 JavaScript 코드에서 다음과 같은 문제점들을 검사합니다:
-    1. 괄호 불일치 (중괄호, 소괄호, 대괄호)
-    2. 따옴표 불일치 (작은따옴표, 큰따옴표)
-    3. 세미콜론 누락 가능성
-    4. 함수 선언 문제
-    5. 변수 선언 문제
-    6. 객체/배열 리터럴 문제
-    7. 일반적인 JavaScript 문제점들
+    1. 괄호 불일치 (중괄호, 소괄호, 대괄호) - 정확한 라인 위치 표시
+    2. 따옴표 불일치 (작은따옴표, 큰따옴표) - 정확한 라인 위치 표시
+    3. 세미콜론 누락 가능성 - 정확한 라인 위치 표시
+    4. 함수 선언 문제 - 정확한 라인 위치 표시
+    5. 변수 선언 문제 - 정확한 라인 위치 표시
+    6. 객체/배열 리터럴 문제 - 정확한 라인 위치 표시
+    7. 일반적인 JavaScript 문제점들 - 정확한 라인 위치 표시
     """
     issues = []
     
@@ -306,52 +306,138 @@ def check_javascript_issues(code: str) -> List[str]:
     
     # 라인별 문법 검사
     for line_num, line in enumerate(lines, 1):
+        line_stripped = line.strip()
+        
+        # 빈 줄이나 주석은 건너뛰기
+        if not line_stripped or line_stripped.startswith('//') or line_stripped.startswith('/*') or line_stripped.startswith('*'):
+            continue
+        
         # 세미콜론 누락 검사 (더 정확한 패턴)
-        if re.search(r'[^;{}]\s*$', line.strip()) and line.strip() and not line.strip().endswith('{') and not line.strip().endswith('}') and not line.strip().endswith('(') and not line.strip().endswith('['):
+        if (re.search(r'[^;{}]\s*$', line_stripped) and 
+            line_stripped and 
+            not line_stripped.endswith('{') and 
+            not line_stripped.endswith('}') and 
+            not line_stripped.endswith('(') and 
+            not line_stripped.endswith('[') and
+            not line_stripped.endswith(';') and
+            not line_stripped.endswith(',') and
+            not line_stripped.endswith(':')):
+            
             next_line_idx = line_num
             if next_line_idx < len(lines):
                 next_line = lines[next_line_idx].strip()
                 if next_line and next_line[0].isalpha() and '=' in next_line:
                     issues.append(f"라인 {line_num}: 세미콜론 누락 가능성")
         
-        # 따옴표 불일치 검사
-        if line.count('"') % 2 != 0:
-            issues.append(f"라인 {line_num}: 큰따옴표가 닫히지 않았습니다")
-        if line.count("'") % 2 != 0:
-            issues.append(f"라인 {line_num}: 작은따옴표가 닫히지 않았습니다")
+        # 따옴표 불일치 검사 (문자열 리터럴만)
+        # 주석 내부의 따옴표는 제외
+        if not line_stripped.startswith('//') and not line_stripped.startswith('/*') and not line_stripped.startswith('*'):
+            # 큰따옴표 검사
+            quote_count = 0
+            in_string = False
+            escape_next = False
+            
+            for char in line:
+                if escape_next:
+                    escape_next = False
+                    continue
+                if char == '\\':
+                    escape_next = True
+                    continue
+                if char == '"':
+                    if not in_string:
+                        in_string = True
+                    else:
+                        in_string = False
+                    quote_count += 1
+            
+            if quote_count % 2 != 0:
+                issues.append(f"라인 {line_num}: 큰따옴표가 닫히지 않았습니다")
+            
+            # 작은따옴표 검사
+            quote_count = 0
+            in_string = False
+            escape_next = False
+            
+            for char in line:
+                if escape_next:
+                    escape_next = False
+                    continue
+                if char == '\\':
+                    escape_next = True
+                    continue
+                if char == "'":
+                    if not in_string:
+                        in_string = True
+                    else:
+                        in_string = False
+                    quote_count += 1
+            
+            if quote_count % 2 != 0:
+                issues.append(f"라인 {line_num}: 작은따옴표가 닫히지 않았습니다")
         
-        # 함수 선언 문제 검사
-        if re.search(r'function\s+\w+\s*\([^)]*\)\s*\{[^}]*$', line):
-            issues.append(f"라인 {line_num}: 함수 정의가 완료되지 않았습니다")
+        # 함수 선언 문제 검사 (정확한 패턴)
+        if re.search(r'function\s+\w+\s*\([^)]*\)\s*\{[^}]*$', line_stripped):
+            # 다음 라인에서 닫는 중괄호가 있는지 확인
+            has_closing_brace = False
+            for next_line in lines[line_num:]:
+                if '}' in next_line:
+                    has_closing_brace = True
+                    break
+            if not has_closing_brace:
+                issues.append(f"라인 {line_num}: 함수 정의가 완료되지 않았습니다")
         
-        # 변수 선언 문제 검사
-        if re.search(r'(?:var|let|const)\s+\w+\s*[^;]*$', line) and not line.strip().endswith(';'):
-            issues.append(f"라인 {line_num}: 변수 선언이 완료되지 않았습니다")
+        # 변수 선언 문제 검사 (정확한 패턴)
+        if re.search(r'^(?:var|let|const)\s+\w+\s*[^;]*$', line_stripped) and not line_stripped.endswith(';'):
+            # 다음 라인에서 세미콜론이나 다른 문장이 있는지 확인
+            next_line_idx = line_num
+            if next_line_idx < len(lines):
+                next_line = lines[next_line_idx].strip()
+                if next_line and not next_line.startswith('//') and not next_line.startswith('/*'):
+                    issues.append(f"라인 {line_num}: 변수 선언이 완료되지 않았습니다")
         
-        # 객체/배열 리터럴 문제 검사
-        if re.search(r'\{[^}]*$', line) and not line.strip().endswith('}'):
-            issues.append(f"라인 {line_num}: 객체 리터럴이 완료되지 않았습니다")
-        if re.search(r'\[[^\]]*$', line) and not line.strip().endswith(']'):
-            issues.append(f"라인 {line_num}: 배열 리터럴이 완료되지 않았습니다")
+        # 객체/배열 리터럴 문제 검사 (정확한 패턴)
+        if re.search(r'\{[^}]*$', line_stripped) and not line_stripped.endswith('}'):
+            # 다음 라인에서 닫는 중괄호가 있는지 확인
+            has_closing_brace = False
+            for next_line in lines[line_num:]:
+                if '}' in next_line:
+                    has_closing_brace = True
+                    break
+            if not has_closing_brace:
+                issues.append(f"라인 {line_num}: 객체 리터럴이 완료되지 않았습니다")
         
-        # 할당 연산자 확인
-        if re.search(r'[^=!<>]=[^=]', line):
-            issues.append(f"라인 {line_num}: 할당 연산자 확인 필요 (= vs ==)")
+        if re.search(r'\[[^\]]*$', line_stripped) and not line_stripped.endswith(']'):
+            # 다음 라인에서 닫는 대괄호가 있는지 확인
+            has_closing_bracket = False
+            for next_line in lines[line_num:]:
+                if ']' in next_line:
+                    has_closing_bracket = True
+                    break
+            if not has_closing_bracket:
+                issues.append(f"라인 {line_num}: 배열 리터럴이 완료되지 않았습니다")
+        
+        # 할당 연산자 확인 (더 정확한 패턴)
+        # var x = y 형태는 제외
+        if re.search(r'[^=!<>]=[^=]', line_stripped) and not re.search(r'^(?:var|let|const)\s+\w+\s*=', line_stripped):
+            # 함수 호출이나 객체 속성 할당은 제외
+            if not re.search(r'\.\w+\s*=\s*[^=]', line_stripped) and not re.search(r'\[\s*\w+\s*\]\s*=\s*[^=]', line_stripped):
+                issues.append(f"라인 {line_num}: 할당 연산자 확인 필요 (= vs ==)")
         
         # 일반적인 JavaScript 문제점들
-        if re.search(r'var\s+\w+\s*=\s*undefined', line):
+        if re.search(r'var\s+\w+\s*=\s*undefined', line_stripped):
             issues.append(f"라인 {line_num}: undefined 할당은 불필요합니다")
-        if re.search(r'==\s*null', line):
+        if re.search(r'==\s*null', line_stripped):
             issues.append(f"라인 {line_num}: null 비교시 === 사용을 권장합니다")
-        if re.search(r'==\s*undefined', line):
+        if re.search(r'==\s*undefined', line_stripped):
             issues.append(f"라인 {line_num}: undefined 비교시 === 사용을 권장합니다")
-        if re.search(r'console\.log\(', line):
+        if re.search(r'console\.log\(', line_stripped):
             issues.append(f"라인 {line_num}: console.log는 프로덕션에서 제거해야 합니다")
-        if re.search(r'eval\(', line):
+        if re.search(r'eval\(', line_stripped):
             issues.append(f"라인 {line_num}: eval() 사용은 보안상 위험합니다")
-        if re.search(r'for\s*\(\s*;\s*;\s*\)', line):
+        if re.search(r'for\s*\(\s*;\s*;\s*\)', line_stripped):
             issues.append(f"라인 {line_num}: 무한 루프 위험이 있습니다")
-        if re.search(r'while\s*\(\s*true\s*\)', line):
+        if re.search(r'while\s*\(\s*true\s*\)', line_stripped):
             issues.append(f"라인 {line_num}: 무한 루프 위험이 있습니다")
     
     return issues if issues else ['JavaScript 문법에 문제없음']
@@ -371,22 +457,26 @@ def check_exbuilder6_apis(code: str) -> List[str]:
     # app.lookup으로 찾은 컨트롤들의 변수명과 타입 매핑
     variable_controls = {}
     
-    # app.lookup 패턴 찾기 (한글 설명: app.lookup을 통해 컨트롤을 찾는 패턴을 검색)
-    lookup_pattern = r'const\s+(\w+)\s*=\s*app\.lookup\([\'"]([^\'"]+)[\'"]\)'
-    lookup_matches = re.findall(lookup_pattern, code)
+    # app.lookup 패턴 찾기 (var, let, const 모두 지원)
+    lookup_patterns = [
+        r'(?:var|let|const)\s+(\w+)\s*=\s*app\.lookup\([\'"]([^\'"]+)[\'"]\)',
+        r'(\w+)\s*=\s*app\.lookup\([\'"]([^\'"]+)[\'"]\)'
+    ]
     
-    for var_name, control_id in lookup_matches:
-        # 컨트롤 ID에서 타입 추정 (XML 설정 기반)
-        control_type = None
-        for pattern in EXBUILDER6_CONTROL_APIS.keys():
-            if control_id.startswith(pattern):
-                control_type = pattern
-                break
-        
-        if control_type:
-            variable_controls[var_name] = control_type
+    for pattern in lookup_patterns:
+        lookup_matches = re.findall(pattern, code)
+        for var_name, control_id in lookup_matches:
+            # 컨트롤 ID에서 타입 추정 (XML 설정 기반)
+            control_type = None
+            for pattern_name in EXBUILDER6_CONTROL_APIS.keys():
+                if control_id.startswith(pattern_name):
+                    control_type = pattern_name
+                    break
+            
+            if control_type:
+                variable_controls[var_name] = control_type
     
-    # 메서드 호출 패턴 찾기 - 잘못된 사용만 보고 (한글 설명: 메서드 호출 패턴을 찾아서 잘못된 사용만 검출)
+    # 메서드 호출 패턴 찾기 - 잘못된 사용만 보고
     method_pattern = r'(\w+)\.(\w+)\('
     method_matches = re.findall(method_pattern, code)
     
@@ -410,9 +500,11 @@ def check_exbuilder6_apis(code: str) -> List[str]:
                     if method_name not in EXBUILDER6_DATA_APIS['methods']:
                         # FileInput 관련 특수 메서드 확인
                         if method_name not in ['addFileParameter', 'removeFileParameter', 'getFileParameter', 'setFileParameter']:
-                            incorrect_apis.append(f"존재하지 않는 메서드: {method_name}")
+                            # Submission 관련 특수 메서드 확인
+                            if method_name not in ['addFileParameter', 'removeFileParameter', 'getFileParameter', 'setFileParameter', 'submit', 'cancel', 'validate']:
+                                incorrect_apis.append(f"존재하지 않는 메서드: {method_name}")
     
-    # 속성 접근 패턴 찾기 - 잘못된 사용만 보고 (한글 설명: 속성 접근 패턴을 찾아서 잘못된 사용만 검출)
+    # 속성 접근 패턴 찾기 - 잘못된 사용만 보고
     # 메서드 호출을 제외한 속성 접근만 찾기
     property_pattern = r'(\w+)\.(\w+)(?!\()'
     property_matches = re.findall(property_pattern, code)
@@ -426,7 +518,7 @@ def check_exbuilder6_apis(code: str) -> List[str]:
         # 메서드 호출이 아닌 경우만 처리
         if f"{var_name}.{property_name}" not in method_calls:
             # 일반적인 JavaScript 속성들은 제외
-            if property_name in ['length', 'files', 'control', 'lookup']:
+            if property_name in ['length', 'files', 'control', 'lookup', 'value']:
                 continue
                 
             if var_name in variable_controls:
@@ -440,7 +532,7 @@ def check_exbuilder6_apis(code: str) -> List[str]:
                 if property_name not in EXBUILDER6_COMMON_APIS['properties']:
                     incorrect_apis.append(f"존재하지 않는 속성: {property_name}")
     
-    # 이벤트 핸들러 찾기 (API Reference 기반) - 잘못된 이벤트만 보고 (한글 설명: 이벤트 핸들러 패턴을 찾아서 잘못된 이벤트만 검출)
+    # 이벤트 핸들러 찾기 (API Reference 기반) - 잘못된 이벤트만 보고
     event_patterns = [
         # 기본 이벤트
         (r'onLoad\s*=', 'onLoad'),
@@ -534,7 +626,7 @@ def check_exbuilder6_apis(code: str) -> List[str]:
             # 실제로는 eXBuilder6에 존재하는 이벤트이므로 잘못된 것으로 보고하지 않음
             pass
     
-    # 메시지 관련 - 잘못된 사용만 보고 (한글 설명: 메시지 관련 API 사용을 검사하여 잘못된 사용만 검출)
+    # 메시지 관련 - 잘못된 사용만 보고
     message_patterns = [
         (r'showMessage\(', 'showMessage'),
         (r'showConfirm\(', 'showConfirm'),
@@ -555,7 +647,7 @@ def check_exbuilder6_apis(code: str) -> List[str]:
             # 실제로는 eXBuilder6에 존재하는 메시지 함수이므로 잘못된 것으로 보고하지 않음
             pass
     
-    # app.lookup은 올바른 사용이므로 보고하지 않음 (한글 설명: app.lookup은 eXBuilder6의 정상적인 API이므로 오류로 보고하지 않음)
+    # app.lookup은 올바른 사용이므로 보고하지 않음
     
     return incorrect_apis if incorrect_apis else ['eXBuilder6 API 사용에 문제없음']
 

@@ -1,5 +1,28 @@
 import React, { useState } from 'react';
 
+interface AnalysisIssue {
+  category: string;
+  message: string;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  priority: 'LOW' | 'MEDIUM' | 'HIGH';
+  line_number?: number;
+  suggestion: string;
+}
+
+interface EnhancedJavaScriptAnalysisResult {
+  issues: AnalysisIssue[];
+  execution_flow: string[];
+  llm_analysis?: string;
+  statistics?: {
+    total_issues: number;
+    critical_issues: number;
+    high_priority_issues: number;
+    medium_priority_issues: number;
+    low_priority_issues: number;
+  };
+  recommendations?: string[];
+}
+
 interface JavaScriptAnalysisResult {
   javascript_issues: string[];
   exbuilder6_apis: string[];
@@ -13,9 +36,10 @@ function App() {
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState('');
   const [jsAnalysis, setJsAnalysis] = useState<JavaScriptAnalysisResult | null>(null);
+  const [enhancedAnalysis, setEnhancedAnalysis] = useState<EnhancedJavaScriptAnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [analysisMode, setAnalysisMode] = useState<'review' | 'js-analysis'>('review');
+  const [analysisMode, setAnalysisMode] = useState<'review' | 'js-analysis' | 'enhanced-js-analysis'>('review');
 
   const handleCodeChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => setCode(e.target.value);
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => setFile(e.target.files?.[0] || null);
@@ -24,14 +48,43 @@ function App() {
     e.preventDefault();
     setResult('');
     setJsAnalysis(null);
+    setEnhancedAnalysis(null);
     setError('');
     setLoading(true);
     
     try {
       let res;
       
-      if (analysisMode === 'js-analysis') {
-        // JavaScript 분석 모드
+      if (analysisMode === 'enhanced-js-analysis') {
+        // 향상된 JavaScript 분석 모드 (LM Studio 포함)
+        if (file) {
+          const formData = new FormData();
+          formData.append('file', file);
+          res = await fetch('/api/enhanced-js/analyze/file', {
+            method: 'POST',
+            body: formData,
+          });
+        } else if (code.trim()) {
+          res = await fetch('/api/enhanced-js/analyze/detailed', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code, fast_mode: false }),
+          });
+        } else {
+          setError('코드를 입력하거나 파일을 업로드하세요.');
+          setLoading(false);
+          return;
+        }
+        
+        if (!res.ok) {
+          const err = await res.json();
+          setError(err.detail || '서버 오류');
+        } else {
+          const data = await res.json();
+          setEnhancedAnalysis(data);
+        }
+      } else if (analysisMode === 'js-analysis') {
+        // 기존 JavaScript 분석 모드
         if (file) {
           const formData = new FormData();
           formData.append('file', file);
@@ -92,6 +145,102 @@ function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const getSeverityColor = (severity: string) => {
+    switch (severity) {
+      case 'CRITICAL': return '#dc3545';
+      case 'HIGH': return '#fd7e14';
+      case 'MEDIUM': return '#ffc107';
+      case 'LOW': return '#28a745';
+      default: return '#6c757d';
+    }
+  };
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'HIGH': return '#dc3545';
+      case 'MEDIUM': return '#ffc107';
+      case 'LOW': return '#28a745';
+      default: return '#6c757d';
+    }
+  };
+
+  const formatEnhancedAnalysis = (analysis: EnhancedJavaScriptAnalysisResult) => {
+    let output = '';
+
+    // 요약 정보 (안전한 처리)
+    if (analysis.statistics) {
+      output += '**📊 분석 요약:**\n';
+      output += `- 총 문제점: ${analysis.statistics.total_issues || 0}개\n`;
+      output += `- 🔴 Critical: ${analysis.statistics.critical_issues || 0}개\n`;
+      output += `- 🟠 High: ${analysis.statistics.high_priority_issues || 0}개\n`;
+      output += `- 🟡 Medium: ${analysis.statistics.medium_priority_issues || 0}개\n`;
+      output += `- 🟢 Low: ${analysis.statistics.low_priority_issues || 0}개\n\n`;
+    } else {
+      output += '**📊 분석 요약:**\n';
+      output += `- 총 문제점: ${analysis.issues?.length || 0}개\n\n`;
+    }
+
+    // 문제점들을 심각도별로 그룹화
+    const issuesBySeverity = analysis.issues.reduce((acc, issue) => {
+      if (!acc[issue.severity]) acc[issue.severity] = [];
+      acc[issue.severity].push(issue);
+      return acc;
+    }, {} as Record<string, AnalysisIssue[]>);
+
+    // Critical부터 Low 순으로 정렬
+    const severityOrder = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+    
+    severityOrder.forEach(severity => {
+      if (issuesBySeverity[severity] && issuesBySeverity[severity].length > 0) {
+        const severityEmoji = severity === 'CRITICAL' ? '🔴' : 
+                             severity === 'HIGH' ? '🟠' : 
+                             severity === 'MEDIUM' ? '🟡' : '🟢';
+        
+        output += `**${severityEmoji} ${severity} 심각도 문제점 (${issuesBySeverity[severity].length}개):**\n`;
+        
+        issuesBySeverity[severity].forEach((issue, index) => {
+          const lineInfo = issue.line_number ? ` (라인 ${issue.line_number})` : '';
+          const priorityInfo = `[우선순위: ${issue.priority || 'N/A'}]`;
+          
+          output += `${index + 1}. **${issue.category}**${lineInfo} ${priorityInfo}\n`;
+          output += `   - 문제: ${issue.message}\n`;
+          output += `   - 제안: ${issue.suggestion || '구체적인 제안사항이 없습니다.'}\n\n`;
+        });
+      }
+    });
+
+    // 문제점이 없을 때 메시지
+    if (analysis.issues.length === 0) {
+      output += '**✅ 발견된 문제점 없음**\n\n';
+    }
+
+    // 실행 흐름
+    if (analysis.execution_flow.length > 0) {
+      output += '**🔄 실행 흐름:**\n';
+      analysis.execution_flow.forEach((step, index) => {
+        output += `${index + 1}. ${step}\n`;
+      });
+      output += '\n';
+    }
+
+    // 권장사항 (있는 경우)
+    if (analysis.recommendations && analysis.recommendations.length > 0) {
+      output += '**💡 권장사항:**\n';
+      analysis.recommendations.forEach((rec, index) => {
+        output += `${index + 1}. ${rec}\n`;
+      });
+      output += '\n';
+    }
+
+    // LM Studio 분석 결과 (있는 경우)
+    if (analysis.llm_analysis) {
+      output += '**🤖 LM Studio 상세 분석:**\n';
+      output += analysis.llm_analysis;
+    }
+
+    return output;
   };
 
   const formatJsAnalysis = (analysis: JavaScriptAnalysisResult) => {
@@ -159,7 +308,7 @@ function App() {
           />
           일반 리뷰
         </label>
-        <label>
+        <label style={{ marginRight: 20 }}>
           <input
             type="radio"
             name="mode"
@@ -168,6 +317,16 @@ function App() {
             onChange={() => setAnalysisMode('js-analysis')}
           />
           JavaScript 분석
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="mode"
+            value="enhanced-js-analysis"
+            checked={analysisMode === 'enhanced-js-analysis'}
+            onChange={() => setAnalysisMode('enhanced-js-analysis')}
+          />
+          향상된 JavaScript 분석 (LM Studio 포함)
         </label>
       </div>
 
@@ -202,7 +361,9 @@ function App() {
           }} 
           disabled={loading}
         >
-          {loading ? '분석 중...' : (analysisMode === 'js-analysis' ? 'JavaScript 분석' : '리뷰 요청')}
+          {loading ? '분석 중...' : 
+           analysisMode === 'enhanced-js-analysis' ? '향상된 JavaScript 분석 (LM Studio)' :
+           analysisMode === 'js-analysis' ? 'JavaScript 분석' : '리뷰 요청'}
         </button>
       </form>
       
@@ -216,7 +377,20 @@ function App() {
       
       {/* 결과 표시 */}
       <h2>분석 결과</h2>
-      {jsAnalysis ? (
+      {enhancedAnalysis ? (
+        <pre style={{ 
+          background: '#f8f9fa', 
+          padding: 20, 
+          minHeight: 200,
+          border: '1px solid #dee2e6',
+          borderRadius: '4px',
+          whiteSpace: 'pre-wrap',
+          fontFamily: 'monospace',
+          fontSize: '14px'
+        }}>
+          {formatEnhancedAnalysis(enhancedAnalysis)}
+        </pre>
+      ) : jsAnalysis ? (
         <pre style={{ 
           background: '#f8f9fa', 
           padding: 20, 

@@ -1,158 +1,218 @@
-# ScriptSense: JavaScript 코드 자동 리뷰 & 분석
+# ScriptSense - eXBuilder6 JavaScript 분석기
 
-LM Studio를 활용한 JavaScript 코드 자동 분석 도구입니다. 코드의 문제점을 찾고, eXBuilder6 API 사용 여부를 확인하며, 실행 흐름을 분석합니다.
+ScriptSense는 eXBuilder6 환경에서 작성된 JavaScript 코드를 분석하고 개선점을 제안하는 도구입니다.
 
-## 주요 기능
+## 🚀 주요 기능
 
-### 1. 일반 리뷰 모드
-- eXBuilder6 코드 분석
-- 오류 지점, 경고 지점, 개선 제안, 실행 흐름 분석
-- LM Studio를 활용한 고급 분석
+### 기본 분석기 (`/api/js`)
+- JavaScript 문법/로직 문제점 검사
+- eXBuilder6 API 사용 여부 검사
+- 잠재적 오류 검사
+- 실행 흐름 분석
 
-### 2. JavaScript 분석 모드 (신규)
-- **JavaScript 문법/로직 문제점**: 전통적인 JavaScript 관점에서의 문제점
-- **eXBuilder6 API 사용 여부**: eXBuilder6 프레임워크 API 사용 여부
-- **오류 검사**: 잠재적 오류 및 보안 위험 요소
-- **실행 흐름**: 코드의 실행 과정 분석
+### 🆕 향상된 분석기 (`/api/enhanced-js`)
+- **구조화된 분석 결과**: 심각도별 이슈 분류 및 통계
+- **성능 최적화**: 비동기 처리 및 정규표현식 캐싱
+- **정확한 위치 추적**: 라인 번호 및 컬럼 위치 제공
+- **스마트 제안**: 카테고리별 개선 제안사항
+- **설정 관리**: YAML 기반 API 정보 관리
+- **향상된 파싱**: 주석 및 문자열을 고려한 정확한 분석
 
-## 설치 및 실행
-
-### 1. LM Studio 설정
-```bash
-# LM Studio 설정 스크립트 실행
-./set_lmstudio.ps1
-```
-
-### 2. 서버 실행
-```bash
-# 전체 서버 실행 (백엔드 + 프론트엔드)
-./run_all.ps1
-```
-
-### 3. 서버 종료
-```bash
-# 서버 종료
-./run_stop.ps1
-```
-
-## 사용 방법
-
-### 웹 인터페이스
-1. 브라우저에서 `http://localhost:3000` 접속
-2. 분석 모드 선택:
-   - **일반 리뷰**: eXBuilder6 코드 분석
-   - **JavaScript 분석**: JavaScript 코드 분석
-3. 코드 입력 또는 파일 업로드
-4. 분석 실행
-
-### API 사용
-
-#### JavaScript 분석 API
-```bash
-# 코드 분석
-curl -X POST "http://localhost:8000/api/js/analyze" \
-  -H "Content-Type: application/json" \
-  -d '{"code": "function test() { console.log(\"Hello\"); }", "fast_mode": false}'
-
-# 파일 분석
-curl -X POST "http://localhost:8000/api/js/analyze/file" \
-  -F "file=@your-script.js"
-```
-
-#### 일반 리뷰 API
-```bash
-# 코드 리뷰
-curl -X POST "http://localhost:8000/api/review/text" \
-  -H "Content-Type: application/json" \
-  -d '{"code": "your code here"}'
-```
-
-## JavaScript 분석 항목 상세
-
-### 1. JavaScript 문법/로직 문제점
-- 문법 오류 검사
-- undefined 불필요한 할당
-- null/undefined 비교시 === 사용 권장
-- console.log 프로덕션 제거 필요
-- eval() 보안 위험
-- setTimeout(,0) 대신 setImmediate 권장
-
-### 2. eXBuilder6 API 사용 여부
-다음 API들의 사용 여부를 검사합니다:
-- `this.form`, `this.grid`, `this.tree`, `this.combo`
-- `this.onLoad`, `this.onClick`, `this.onChange`
-- `this.getValue`, `this.setValue`, `this.getData`, `this.setData`
-- `this.addRow`, `this.deleteRow`, `this.updateRow`
-- `this.showMessage`, `this.showConfirm`, `this.showAlert`
-- 기타 eXBuilder6 관련 API들
-
-### 3. 오류 검사
-- getElementById/querySelector null 참조 가능성
-- innerHTML XSS 위험
-- JSON.parse try-catch 없음
-- split 결과 빈 배열 가능성
-
-### 4. 실행 흐름
-- 함수 정의
-- 이벤트 리스너
-- 비동기 작업 (setTimeout, fetch, Promise 등)
-- 조건부 실행 (if, switch 등)
-- 반복 실행 (for, while 등)
-
-## 예제
-
-### JavaScript 분석 예제
-```javascript
-function calculateSum(a, b) {
-    if (a == null || b == undefined) {
-        return 0;
-    }
-    return a + b;
-}
-
-const result = calculateSum(5, 3);
-console.log(result);
-```
-
-**분석 결과:**
-- JavaScript 문제점: null 비교시 === 사용 권장, console.log 프로덕션 제거 필요
-- eXBuilder6 API: 사용 안함
-- 오류: 발견된 오류 없음
-- 실행 흐름: 함수 정의, 조건부 실행
-
-### eXBuilder6 예제
-```javascript
-this.onLoad = function() {
-    this.form.setValue('field1', 'Hello');
-    this.grid.addRow({id: 1, name: 'Test'});
-    this.showMessage('데이터가 로드되었습니다.');
-};
-```
-
-**분석 결과:**
-- JavaScript 문제점: 발견된 문제점 없음
-- eXBuilder6 API: this.form.setValue, this.grid.addRow, this.showMessage
-- 오류: 발견된 오류 없음
-- 실행 흐름: 함수 정의
-
-## 프로젝트 구조
+## 📁 프로젝트 구조
 
 ```
 ScriptSense/
 ├── backend/
-│   ├── main.py              # FastAPI 메인 앱
-│   ├── review.py            # 일반 리뷰 API
-│   ├── js_analyzer.py       # JavaScript 분석 API (신규)
-│   ├── llm_client.py        # LM Studio 클라이언트
-│   └── config_llm.py        # LLM 설정
+│   ├── enhanced_js_analyzer.py    # 🆕 향상된 분석기
+│   ├── js_analyzer.py             # 기본 분석기
+│   ├── config/
+│   │   └── exbuilder6.yaml        # 🆕 API 설정 파일
+│   ├── main.py
+│   └── requirements.txt
 ├── frontend/
 │   └── src/
-│       └── App.tsx          # React 앱 (JavaScript 분석 기능 포함)
-├── run_all.ps1              # 서버 실행 스크립트
-├── run_stop.ps1             # 서버 종료 스크립트
-└── set_lmstudio.ps1         # LM Studio 설정 스크립트
+│       └── components/
+│           └── ReviewResult.tsx
+├── test_enhanced_analyzer.py      # 🆕 향상된 분석기 테스트
+└── README.md
 ```
 
-## 라이선스
+## 🔧 설치 및 실행
 
-이 프로젝트는 MIT 라이선스 하에 제공됩니다.
+### 1. 의존성 설치
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+### 2. 서버 실행
+```bash
+cd backend
+uvicorn main:app --reload
+```
+
+### 3. 테스트 실행
+```bash
+python test_enhanced_analyzer.py
+```
+
+## 📊 API 엔드포인트
+
+### 기본 분석기
+- `POST /api/js/analyze` - JavaScript 코드 분석
+- `POST /api/js/analyze/file` - JavaScript 파일 분석
+- `POST /api/js/analyze/detailed` - 상세 분석 (LLM 포함)
+
+### 🆕 향상된 분석기
+- `POST /api/enhanced-js/analyze` - 향상된 JavaScript 코드 분석
+- `POST /api/enhanced-js/analyze/file` - 향상된 JavaScript 파일 분석
+- `POST /api/enhanced-js/analyze/detailed` - 향상된 상세 분석 (LLM 포함)
+
+## 🎯 향상된 분석기 주요 개선사항
+
+### 1. **중복 코드 제거 및 최적화**
+- 에러 패턴을 카테고리별로 정리하여 중복 제거
+- 정규표현식 패턴 사전 컴파일로 성능 향상
+- `@lru_cache` 데코레이터를 통한 메모이제이션
+
+### 2. **eXBuilder6 API 검증 로직 개선**
+- 동적 컨트롤 ID 처리 지원
+- 정확한 prefix 매칭 및 추가 검증
+- YAML 설정 파일을 통한 API 정보 관리
+
+### 3. **JavaScript 문법 검사 정확도 향상**
+- 주석과 문자열을 고려한 정확한 파싱
+- 이스케이프 문자 처리
+- 라인별 정확한 위치 추적
+
+### 4. **분석 결과 구조화 개선**
+- `AnalysisIssue` 모델을 통한 구조화된 결과
+- 심각도별 분류 (Critical, High, Medium, Low, Info)
+- 라인 번호, 컬럼 위치, 제안사항 포함
+
+### 5. **성능 최적화**
+- 비동기 처리로 병렬 분석 수행
+- ThreadPoolExecutor를 통한 멀티스레딩
+- 대용량 코드 처리 최적화
+
+### 6. **설정 관리 개선**
+- YAML 파일을 통한 API 정보 외부화
+- 버전별 API 정보 관리
+- 런타임 API 정보 업데이트 지원
+
+### 7. **에러 처리 및 로깅 강화**
+- 컨텍스트 매니저를 통한 에러 처리
+- 구조화된 로깅
+- 상세한 에러 메시지 제공
+
+## 📈 분석 결과 예시
+
+### 향상된 분석기 응답 형식
+```json
+{
+  "issues": [
+    {
+      "category": "xss_security",
+      "severity": "critical",
+      "message": "innerHTML 사용시 XSS 위험이 있습니다",
+      "line_number": 15,
+      "column": 25,
+      "suggestion": "innerText나 textContent를 사용하거나 입력값을 sanitize하세요."
+    }
+  ],
+  "statistics": {
+    "total_issues": 5,
+    "critical_issues": 1,
+    "high_issues": 2,
+    "medium_issues": 1,
+    "low_issues": 1
+  },
+  "execution_flow": [
+    "onLoad 함수: 초기화 - 컨트롤 객체를 찾습니다, 데이터를 처리합니다",
+    "이벤트 핸들러: onClick"
+  ],
+  "recommendations": [
+    "보안 위험이 있는 코드를 즉시 수정하세요.",
+    "높은 우선순위 이슈들을 우선적으로 해결하세요."
+  ]
+}
+```
+
+## 🔍 지원하는 eXBuilder6 컨트롤
+
+- **Grid (grd)**: 데이터 그리드 컨트롤
+- **Button (btn)**: 버튼 컨트롤
+- **ComboBox (cmb)**: 콤보박스 컨트롤
+- **CheckBox (cbx)**: 체크박스 컨트롤
+- **InputBox (ipb)**: 입력박스 컨트롤
+- **TextArea (txa)**: 텍스트 영역 컨트롤
+- **Tree (tre)**: 트리 컨트롤
+- **Calendar (cal)**: 캘린더 컨트롤
+
+## 🛠️ 개발 및 테스트
+
+### 테스트 실행
+```bash
+# 향상된 분석기 테스트
+python test_enhanced_analyzer.py
+
+# 개별 컴포넌트 테스트
+python -c "
+from backend.enhanced_js_analyzer import ConfigManager
+config = ConfigManager()
+print('설정 로드 성공:', bool(config.config))
+"
+```
+
+### 설정 파일 수정
+`backend/config/exbuilder6.yaml` 파일을 수정하여 새로운 API 정보를 추가하거나 기존 정보를 업데이트할 수 있습니다.
+
+## 📝 사용 예시
+
+### JavaScript 코드 분석
+```python
+import requests
+
+# 향상된 분석기 사용
+response = requests.post("http://localhost:8000/api/enhanced-js/analyze", 
+    json={
+        "code": """
+        function onLoad() {
+            var grid = app.lookup("grdMain");
+            grid.addRow();
+        }
+        """,
+        "fast_mode": False
+    }
+)
+
+result = response.json()
+print(f"발견된 이슈: {result['statistics']['total_issues']}개")
+```
+
+## 🤝 기여하기
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+## 📄 라이선스
+
+이 프로젝트는 MIT 라이선스 하에 배포됩니다.
+
+## 🆕 업데이트 로그
+
+### v2.0.0 - 향상된 분석기 출시
+- 구조화된 분석 결과 제공
+- 성능 최적화 및 비동기 처리
+- 정확한 위치 추적 및 제안사항
+- YAML 기반 설정 관리
+- 향상된 에러 처리 및 로깅
+
+### v1.0.0 - 기본 분석기
+- JavaScript 문법 검사
+- eXBuilder6 API 검증
+- 기본 오류 검사
+- 실행 흐름 분석
